@@ -14,6 +14,7 @@ export const config = {
   ttsModel: process.env.OPENAI_TTS_MODEL || "tts-1",
   ttsVoice: process.env.OPENAI_TTS_VOICE || "alloy",
   port: Number(process.env.PORT || 3000),
+  host: process.env.HOST || process.env.IP || "0.0.0.0",
   dashboardPassword: process.env.DASHBOARD_PASSWORD || "change-me",
   dbPath: process.env.DB_PATH || "./data/dawenli.db",
   // مواعيد المبادرة (بتوقيت القاهرة)

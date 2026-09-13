@@ -1430,7 +1430,7 @@ export function startServer() {
     res.status(status).json({ error: status === 413 ? "الملف كبير جدًا (الحد ١٢ ميجا)" : "حصل خطأ في الخادم" });
   });
 
-  app.listen(config.port, "0.0.0.0", () =>
-    console.log(`📊 الداشبورد شغّال على http://0.0.0.0:${config.port}`)
+  app.listen(config.port, config.host, () =>
+    console.log(`📊 الداشبورد شغّال على http://${config.host}:${config.port}`)
   );
 }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../core/api_client.dart';
 import '../models/chat_message.dart';
 import '../services/local_storage_service.dart';
+import '../services/direct_ai_service.dart';
 
 class ChatProvider extends ChangeNotifier {
   final ApiClient _api = ApiClient();
@@ -107,7 +108,36 @@ class ChatProvider extends ChangeNotifier {
       debugPrint('Chat API error: $e');
     }
 
-    // بديل ذكي محلي في حالة تعذر الوصول للسيرفر
+    // إذا تعذر الوصول لخادم Node.js، نستخدم مزود الذكاء المباشر الذي ضبطه المستخدم (مثل helpcoder / gpt-5)
+    try {
+      final direct = DirectAiService();
+      if (direct.isConfigured) {
+        final messagesList = _messages
+            .where((m) => m.text.isNotEmpty)
+            .map((m) => {
+                  'role': m.isUser ? 'user' : 'assistant',
+                  'content': m.text,
+                })
+            .toList();
+
+        final reply = await direct.chat(
+          messages: messagesList,
+          systemPrompt: 'أنت دوّنلي، المساعد الشخصي الذكي لتنظيم اليوميات والعادات والمهام. أجب بلباقة ولطف واختصار باللغة العربية.',
+        );
+
+        if (reply != null && reply.isNotEmpty) {
+          _messages.add(ChatMessageModel.fromAi(reply));
+          _isSending = false;
+          notifyListeners();
+          await _persistChatHistory();
+          return;
+        }
+      }
+    } catch (directErr) {
+      debugPrint('Direct AI fallback error: $directErr');
+    }
+
+    // بديل ذكي محلي في حالة عدم توفر مفتاح أو شبكة
     await Future.delayed(const Duration(milliseconds: 500));
     final fallback = _generateLocalAiReply(query);
     _messages.add(ChatMessageModel.fromAi(fallback));

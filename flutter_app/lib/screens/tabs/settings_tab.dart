@@ -9,6 +9,8 @@ import '../../core/design_system/sketch_card.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/data_provider.dart';
 
+import '../../services/direct_ai_service.dart';
+
 class SettingsTab extends StatefulWidget {
   const SettingsTab({super.key});
 
@@ -18,6 +20,7 @@ class SettingsTab extends StatefulWidget {
 
 class _SettingsTabState extends State<SettingsTab> {
   final ApiClient _api = ApiClient();
+  final DirectAiService _directAi = DirectAiService();
 
   bool _isLoading = true;
   bool _isSaving = false;
@@ -27,7 +30,7 @@ class _SettingsTabState extends State<SettingsTab> {
   bool _obscureApiKey = true;
   bool _obscureVoiceKey = true;
 
-  String _provider = 'gemini';
+  String _provider = 'custom';
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _modelController = TextEditingController();
   final TextEditingController _baseUrlController = TextEditingController();
@@ -44,10 +47,10 @@ class _SettingsTabState extends State<SettingsTab> {
   String? _versionDate;
 
   final Map<String, Map<String, String>> _providersInfo = {
-    'gemini': {'label': 'Google Gemini ♊', 'defaultModel': 'gemini-2.5-flash'},
+    'custom': {'label': 'مخصص (OpenAI-compatible) 🔌', 'defaultModel': 'gpt-5'},
     'openai': {'label': 'OpenAI 🤖', 'defaultModel': 'gpt-4o'},
+    'gemini': {'label': 'Google Gemini ♊', 'defaultModel': 'gemini-2.5-flash'},
     'xai': {'label': 'xAI (Grok) ⚡', 'defaultModel': 'grok-4.6'},
-    'custom': {'label': 'مخصص (OpenAI-compatible) 🔌', 'defaultModel': ''},
   };
 
   @override
@@ -69,26 +72,41 @@ class _SettingsTabState extends State<SettingsTab> {
 
   Future<void> _loadAllSettings() async {
     setState(() => _isLoading = true);
-    try {
-      final res = await _api.get('/api/admin/ai-settings');
-      if (res.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-        setState(() {
-          _configured = data['configured'] == true;
-          _source = data['source']?.toString();
-          _provider = data['provider']?.toString() ?? 'gemini';
-          _modelController.text = data['model']?.toString() ??
-              _providersInfo[_provider]?['defaultModel'] ?? '';
-          _baseUrlController.text = data['baseUrl']?.toString() ?? '';
-          _keyHint = data['keyHint']?.toString();
-        });
-      }
-    } catch (e) {
-      debugPrint('Error loading AI settings: $e');
+
+    await _directAi.init();
+    if (_directAi.isConfigured) {
+      _provider = _directAi.provider;
+      _modelController.text = _directAi.model;
+      _baseUrlController.text = _directAi.baseUrl;
+      _keyHint = _directAi.apiKey.length > 4
+          ? '…${_directAi.apiKey.substring(_directAi.apiKey.length - 4)}'
+          : _directAi.apiKey;
+      _configured = true;
+      _source = 'local';
     }
 
     try {
-      final vRes = await _api.get('/api/admin/version');
+      final res = await _api.get('/api/admin/ai-settings').timeout(const Duration(seconds: 2));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+        setState(() {
+          _configured = data['configured'] == true || _configured;
+          _source = data['source']?.toString() ?? _source;
+          _provider = data['provider']?.toString() ?? _provider;
+          if (_modelController.text.isEmpty) {
+            _modelController.text = data['model']?.toString() ??
+                _providersInfo[_provider]?['defaultModel'] ?? 'gpt-5';
+          }
+          if (_baseUrlController.text.isEmpty) {
+            _baseUrlController.text = data['baseUrl']?.toString() ?? 'https://helpcoder.cc';
+          }
+          _keyHint = data['keyHint']?.toString() ?? _keyHint;
+        });
+      }
+    } catch (_) {}
+
+    try {
+      final vRes = await _api.get('/api/admin/version').timeout(const Duration(seconds: 2));
       if (vRes.statusCode == 200) {
         final vData = jsonDecode(utf8.decode(vRes.bodyBytes)) as Map<String, dynamic>;
         final cur = vData['current'] as Map<String, dynamic>?;
@@ -113,102 +131,110 @@ class _SettingsTabState extends State<SettingsTab> {
       _testResult = null;
     });
 
+    final apiKey = _apiKeyController.text.trim();
+    final model = _modelController.text.trim().isNotEmpty
+        ? _modelController.text.trim()
+        : (_providersInfo[_provider]?['defaultModel'] ?? 'gpt-5');
+    final baseUrl = _baseUrlController.text.trim().isNotEmpty
+        ? _baseUrlController.text.trim()
+        : _directAi.baseUrl;
+
+    // 1. أولاً: اختبار الاتصال المباشر من الهاتف (يعمل بدون الحاجة لسيرفر محلي)
+    final directRes = await _directAi.testConnection(
+      provider: _provider,
+      apiKey: apiKey.isNotEmpty ? apiKey : _directAi.apiKey,
+      model: model,
+      baseUrl: baseUrl,
+    );
+
+    if (directRes['ok'] == true) {
+      if (mounted) {
+        setState(() {
+          _testResult = {
+            'ok': true,
+            'model': directRes['model'],
+            'reply': '${directRes['reply']} (اتصال مباشر ناجح ⚡)',
+          };
+          _configured = true;
+          _isTesting = false;
+        });
+      }
+      return;
+    }
+
+    // 2. ثانياً: إذا كان السيرفر متاحاً نجرب من خلاله أيضاً
     try {
       final payload = <String, dynamic>{
         'provider': _provider,
       };
-      if (_apiKeyController.text.trim().isNotEmpty) {
-        payload['api_key'] = _apiKeyController.text.trim();
-      }
-      if (_modelController.text.trim().isNotEmpty) {
-        payload['model'] = _modelController.text.trim();
-      }
-      if (_provider == 'custom' && _baseUrlController.text.trim().isNotEmpty) {
-        payload['base_url'] = _baseUrlController.text.trim();
-      }
+      if (apiKey.isNotEmpty) payload['api_key'] = apiKey;
+      payload['model'] = model;
+      if (_provider == 'custom') payload['base_url'] = baseUrl;
 
       final res = await _api.post('/api/admin/ai-settings/test', body: payload);
       if (res.statusCode == 200) {
         final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-        setState(() => _testResult = data);
-      } else {
-        setState(() {
-          _testResult = {
-            'ok': false,
-            'error': 'رمز الاستجابة: ${res.statusCode} — تعذر إتمام الاختبار',
-          };
-        });
+        if (mounted) setState(() => _testResult = data);
+        return;
       }
-    } catch (e) {
+    } catch (_) {}
+
+    if (mounted) {
       setState(() {
         _testResult = {
           'ok': false,
-          'error': 'فشل الاتصال بالخادم: $e',
+          'error': directRes['error'] ?? 'تعذر الاتصال بمزود الذكاء',
         };
+        _isTesting = false;
       });
-    } finally {
-      if (mounted) setState(() => _isTesting = false);
     }
   }
 
   Future<void> _saveAiSettings() async {
     setState(() => _isSaving = true);
+    final apiKey = _apiKeyController.text.trim();
+    final model = _modelController.text.trim().isNotEmpty
+        ? _modelController.text.trim()
+        : _providersInfo[_provider]?['defaultModel'] ?? 'gpt-5';
+    final baseUrl = _baseUrlController.text.trim();
+    final voiceKey = _voiceKeyController.text.trim();
+
+    // 1. حفظ الإعدادات محلياً على الهاتف دائماً
+    await _directAi.saveSettings(
+      provider: _provider,
+      apiKey: apiKey,
+      model: model,
+      baseUrl: baseUrl.isNotEmpty ? baseUrl : 'https://helpcoder.cc',
+      voiceKey: voiceKey,
+    );
+
+    // 2. محاولة حفظ الإعدادات على السيرفر إن كان متصلاً
     try {
       final payload = <String, dynamic>{
         'provider': _provider,
-        'model': _modelController.text.trim().isNotEmpty
-            ? _modelController.text.trim()
-            : _providersInfo[_provider]?['defaultModel'] ?? '',
+        'model': model,
       };
-      if (_apiKeyController.text.trim().isNotEmpty) {
-        payload['api_key'] = _apiKeyController.text.trim();
-      }
-      if (_provider == 'custom') {
-        payload['base_url'] = _baseUrlController.text.trim();
-      }
-      if (_voiceKeyController.text.trim().isNotEmpty) {
-        payload['voice_key'] = _voiceKeyController.text.trim();
-      }
+      if (apiKey.isNotEmpty) payload['api_key'] = apiKey;
+      if (_provider == 'custom') payload['base_url'] = baseUrl;
+      if (voiceKey.isNotEmpty) payload['voice_key'] = voiceKey;
 
-      final res = await _api.put('/api/admin/ai-settings', body: payload);
-      if (res.statusCode == 200) {
-        await _loadAllSettings();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'تم حفظ وتحديث إعدادات الذكاء الاصطناعي بنجاح 💾✅',
-                style: GoogleFonts.tajawal(fontWeight: FontWeight.bold),
-              ),
-              backgroundColor: AppColors.brand,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      } else {
-        final err = jsonDecode(utf8.decode(res.bodyBytes))['error'] ?? 'تعذر حفظ الإعدادات';
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('$err', style: GoogleFonts.tajawal(fontWeight: FontWeight.bold)),
-              backgroundColor: AppColors.danger,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('خطأ أثناء الحفظ: $e', style: GoogleFonts.tajawal()),
-            backgroundColor: AppColors.danger,
-            behavior: SnackBarBehavior.floating,
+      await _api.put('/api/admin/ai-settings', body: payload).timeout(const Duration(seconds: 2));
+    } catch (_) {}
+
+    await _loadAllSettings();
+
+    if (mounted) {
+      setState(() => _isSaving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'تم حفظ وتفعيل إعدادات الذكاء بنجاح على هاتفك 💾✅',
+            style: GoogleFonts.tajawal(fontWeight: FontWeight.bold),
           ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+          backgroundColor: AppColors.brand,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -672,6 +698,77 @@ class _SettingsTabState extends State<SettingsTab> {
                 SketchButton.secondary(
                   text: 'حفظ عنوان الخادم وإعادة الاتصال',
                   onPressed: _saveServerUrl,
+                ),
+                const SizedBox(height: 14),
+
+                // صندوق مساعدة وتوجيه للهاتف المحمول
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.brandWash,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.brandTint, width: 1.2),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Text('📱', style: TextStyle(fontSize: 16)),
+                          const SizedBox(width: 6),
+                          Text(
+                            'تنبيه لمستخدمي الهاتف المحمول:',
+                            style: GoogleFonts.tajawal(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.brandDeep,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'عند تشغيل التطبيق من الهاتف، كلمة localhost تعني الهاتف نفسه وليس حاسوبك.\n• إذا أردت ربط الهاتف بسيرفر الحاسوب عبر شبكة Wi-Fi، استخدم IP الحاسوب المحلي:',
+                        style: GoogleFonts.tajawal(fontSize: 11.5, color: AppColors.inkMuted, height: 1.5),
+                      ),
+                      const SizedBox(height: 8),
+                      InkWell(
+                        onTap: () {
+                          setState(() => _serverUrlController.text = 'http://192.168.1.10:3000');
+                          _saveServerUrl();
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceCard,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.brand, width: 1.2),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.wifi, size: 16, color: AppColors.brand),
+                              const SizedBox(width: 6),
+                              Text(
+                                'تعيين IP الحاسوب: http://192.168.1.10:3000',
+                                style: GoogleFonts.tajawal(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.brandDeep,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '• أو يمكنك استخدام وضع الذكاء المباشر عبر إدخال مفتاحك والموديل في الكارت أعلاه دون الحاجة لتشغيل أي سيرفر!',
+                        style: GoogleFonts.tajawal(fontSize: 11, color: AppColors.brandDeep, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

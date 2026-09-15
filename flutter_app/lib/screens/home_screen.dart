@@ -20,6 +20,7 @@ import 'tabs/finances_tab.dart';
 import 'tabs/tasks_tab.dart';
 import 'tabs/dafter_tab.dart';
 import 'tabs/assets_tab.dart';
+import 'tabs/settings_tab.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -52,6 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (_) => MoreSheet(
         onSelectTab: (tab) => setState(() => _currentTab = tab),
         onReportIssue: _openReportModal,
+        onAiSettings: () => setState(() => _currentTab = DwTab.settings),
       ),
     );
   }
@@ -205,6 +207,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         );
+      case DwTab.settings:
+        return const SettingsTab();
     }
   }
 
@@ -233,6 +237,10 @@ class _HomeScreenState extends State<HomeScreen> {
           onReportIssue: () {
             Navigator.pop(context);
             _openReportModal();
+          },
+          onAiSettings: () {
+            Navigator.pop(context);
+            setState(() => _currentTab = DwTab.settings);
           },
           onRefresh: _handleRefresh,
           onNotificationsPressed: () {

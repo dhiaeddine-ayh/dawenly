@@ -16,6 +16,7 @@ enum DwTab {
   files,
   chats,
   about,
+  settings,
 }
 
 class DwBottomNav extends StatelessWidget {

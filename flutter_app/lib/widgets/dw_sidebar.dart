@@ -33,7 +33,6 @@ class DwSidebar extends StatelessWidget {
     final user = auth.user;
     final userName = user?.name.isNotEmpty == true ? user!.name : 'مستخدم دوّنلي';
     final avatarLetter = userName.isNotEmpty ? userName[0] : 'د';
-    final isOwner = user?.isOwner ?? false;
 
     return Drawer(
       backgroundColor: AppColors.surfaceCard,
@@ -172,17 +171,19 @@ class DwSidebar extends StatelessWidget {
                       washColor: AppColors.brandWash,
                       indicatorColor: AppColors.brand,
                     ),
+                    _buildNavButton(
+                      tab: DwTab.settings,
+                      title: 'الإعدادات (الذكاء والتهيئة)',
+                      svgIcon: DwIcons.settings,
+                      activeColor: AppColors.brandDeep,
+                      washColor: AppColors.brandWash,
+                      indicatorColor: AppColors.brand,
+                    ),
                     _buildActionNavButton(
                       title: 'بلّغ عن مشكلة',
                       svgIcon: DwIcons.report,
                       onTap: onReportIssue,
                     ),
-                    if (isOwner && onAiSettings != null)
-                      _buildActionNavButton(
-                        title: 'الإعدادات (الذكاء)',
-                        svgIcon: DwIcons.settings,
-                        onTap: onAiSettings!,
-                      ),
 
                     // صندوق النصيحة السريعة
                     const SizedBox(height: 16),

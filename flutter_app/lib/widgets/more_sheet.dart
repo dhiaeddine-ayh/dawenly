@@ -168,15 +168,14 @@ class MoreSheet extends StatelessWidget {
                             onReportIssue();
                           },
                         ),
-                        if (isOwner && onAiSettings != null)
-                          _buildItem(
-                            icon: '⚙️',
-                            label: 'إعدادات الذكاء',
-                            onTap: () {
-                              Navigator.pop(context);
-                              onAiSettings!();
-                            },
-                          ),
+                        _buildItem(
+                          icon: '⚙️',
+                          label: 'الإعدادات (الذكاء والتهيئة)',
+                          onTap: () {
+                            Navigator.pop(context);
+                            onSelectTab(DwTab.settings);
+                          },
+                        ),
                       ],
                     ),
                   ],

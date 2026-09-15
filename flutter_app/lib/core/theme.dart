@@ -4,137 +4,190 @@ import 'constants.dart';
 
 class AppTheme {
   static ThemeData get lightTheme {
-    final baseTextTheme = GoogleFonts.cairoTextTheme();
+    final tajawalText = GoogleFonts.tajawalTextTheme();
+
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
       primaryColor: AppColors.brand,
-      scaffoldBackgroundColor: AppColors.bgLight,
+      scaffoldBackgroundColor: AppColors.paper,
       colorScheme: const ColorScheme.light(
         primary: AppColors.brand,
-        onPrimary: Colors.white,
-        secondary: AppColors.accent,
-        surface: AppColors.cardLight,
-        onSurface: AppColors.textPrimaryLight,
+        onPrimary: AppColors.onAccent,
+        secondary: AppColors.habits,
+        surface: AppColors.surfaceCard,
+        onSurface: AppColors.ink,
         error: AppColors.danger,
       ),
-      textTheme: baseTextTheme.apply(
-        bodyColor: AppColors.textPrimaryLight,
-        displayColor: AppColors.textPrimaryLight,
+      fontFamily: GoogleFonts.tajawal().fontFamily,
+      textTheme: tajawalText.copyWith(
+        displayLarge: GoogleFonts.lemonada(
+          fontSize: 32,
+          fontWeight: FontWeight.w700,
+          color: AppColors.ink,
+          height: 1.25,
+        ),
+        displayMedium: GoogleFonts.lemonada(
+          fontSize: 26,
+          fontWeight: FontWeight.w700,
+          color: AppColors.ink,
+          height: 1.25,
+        ),
+        displaySmall: GoogleFonts.lemonada(
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
+          color: AppColors.ink,
+          height: 1.3,
+        ),
+        headlineLarge: GoogleFonts.lemonada(
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          color: AppColors.ink,
+          height: 1.3,
+        ),
+        headlineMedium: GoogleFonts.lemonada(
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          color: AppColors.ink,
+          height: 1.35,
+        ),
+        headlineSmall: GoogleFonts.lemonada(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: AppColors.ink,
+          height: 1.4,
+        ),
+        titleLarge: GoogleFonts.lemonada(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: AppColors.ink,
+        ),
+        titleMedium: GoogleFonts.tajawal(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          color: AppColors.ink,
+        ),
+        titleSmall: GoogleFonts.tajawal(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: AppColors.inkMuted,
+        ),
+        bodyLarge: GoogleFonts.tajawal(
+          fontSize: 16,
+          fontWeight: FontWeight.w400,
+          color: AppColors.ink,
+          height: 1.6,
+        ),
+        bodyMedium: GoogleFonts.tajawal(
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+          color: AppColors.ink,
+          height: 1.6,
+        ),
+        bodySmall: GoogleFonts.tajawal(
+          fontSize: 12,
+          fontWeight: FontWeight.w400,
+          color: AppColors.inkMuted,
+          height: 1.5,
+        ),
+        labelLarge: GoogleFonts.tajawal(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          color: AppColors.ink,
+        ),
+        labelMedium: GoogleFonts.tajawal(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: AppColors.ink,
+        ),
+        labelSmall: GoogleFonts.tajawal(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          color: AppColors.inkFaint,
+        ),
       ),
       appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.bgLight,
-        foregroundColor: AppColors.textPrimaryLight,
+        backgroundColor: AppColors.paper,
+        foregroundColor: AppColors.ink,
         elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: false,
       ),
       cardTheme: CardThemeData(
-        color: AppColors.cardLight,
+        color: AppColors.surfaceCard,
         elevation: 0,
+        margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: AppColors.borderLight, width: 1),
+          borderRadius: BorderRadius.circular(AppRadii.md),
+          side: const BorderSide(color: AppColors.hairline, width: 1),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: AppColors.paper,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.lg),
+          side: const BorderSide(color: AppColors.ink, width: 2),
+        ),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: AppColors.paper,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+          side: BorderSide(color: AppColors.ink, width: 2),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.white,
+        fillColor: AppColors.surfaceRaised,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.borderLight),
+          borderRadius: BorderRadius.circular(AppRadii.sm),
+          borderSide: const BorderSide(color: AppColors.hairline, width: 1.5),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.borderLight),
+          borderRadius: BorderRadius.circular(AppRadii.sm),
+          borderSide: const BorderSide(color: AppColors.hairline, width: 1.5),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppRadii.sm),
           borderSide: const BorderSide(color: AppColors.brand, width: 2),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.brand,
-          foregroundColor: Colors.white,
+          foregroundColor: AppColors.onAccent,
           elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          textStyle: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: const BorderSide(color: AppColors.brandDeep, width: 2),
+          ),
+          textStyle: GoogleFonts.tajawal(fontWeight: FontWeight.w700, fontSize: 16),
         ),
       ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
         backgroundColor: AppColors.brand,
-        foregroundColor: Colors.white,
+        foregroundColor: AppColors.onAccent,
         elevation: 4,
       ),
     );
   }
 
+  // Dark Theme aligns with warm dark paper tones
   static ThemeData get darkTheme {
-    final baseTextTheme = GoogleFonts.cairoTextTheme(ThemeData.dark().textTheme);
-    return ThemeData(
-      useMaterial3: true,
+    final light = lightTheme;
+    return light.copyWith(
       brightness: Brightness.dark,
-      primaryColor: AppColors.brand,
-      scaffoldBackgroundColor: AppColors.bgDark,
-      colorScheme: const ColorScheme.dark(
-        primary: AppColors.brand,
-        onPrimary: Colors.white,
-        secondary: AppColors.accent,
-        surface: AppColors.cardDark,
-        onSurface: AppColors.textPrimaryDark,
-        error: AppColors.danger,
-      ),
-      textTheme: baseTextTheme.apply(
-        bodyColor: AppColors.textPrimaryDark,
-        displayColor: AppColors.textPrimaryDark,
-      ),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.bgDark,
-        foregroundColor: AppColors.textPrimaryDark,
-        elevation: 0,
-        centerTitle: false,
-      ),
-      cardTheme: CardThemeData(
-        color: AppColors.cardDark,
-        elevation: 0,
+      scaffoldBackgroundColor: const Color(0xFF1E1C18),
+      cardTheme: light.cardTheme.copyWith(
+        color: const Color(0xFF262420),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: AppColors.borderDark, width: 1),
+          borderRadius: BorderRadius.circular(AppRadii.md),
+          side: const BorderSide(color: Color(0xFF38342D), width: 1),
         ),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: AppColors.cardDark,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.borderDark),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.borderDark),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.brand, width: 2),
-        ),
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.brand,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          textStyle: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-      ),
-      floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: AppColors.brand,
-        foregroundColor: Colors.white,
-        elevation: 4,
       ),
     );
   }

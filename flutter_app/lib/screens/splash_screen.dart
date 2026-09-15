@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../core/constants.dart';
+import '../providers/auth_provider.dart';
 import '../providers/data_provider.dart';
 import 'home_screen.dart';
 
@@ -20,24 +23,38 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 900),
     );
     _fadeAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
     _controller.forward();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkLogin();
+      _initApp();
     });
   }
 
-  Future<void> _checkLogin() async {
-    await context.read<DataProvider>().loadAll();
+  Future<void> _initApp() async {
+    final auth = context.read<AuthProvider>();
+    final data = context.read<DataProvider>();
+
+    await Future.wait([
+      auth.checkAuth(),
+      data.loadAll(),
+    ]);
+
     if (!mounted) return;
-    await Future.delayed(const Duration(milliseconds: 600));
+    await Future.delayed(const Duration(milliseconds: 400));
     if (!mounted) return;
 
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const HomeScreen()),
+      PageRouteBuilder(
+        pageBuilder: (context, _, _) => const HomeScreen(),
+        transitionsBuilder: (context, animation, _, child) => FadeTransition(
+          opacity: animation,
+          child: child,
+        ),
+        transitionDuration: const Duration(milliseconds: 300),
+      ),
     );
   }
 
@@ -50,48 +67,43 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgLight,
+      backgroundColor: AppColors.paper,
       body: Center(
         child: FadeTransition(
           opacity: _fadeAnimation,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Image.asset(
-                'assets/icons/icon-512.png',
-                width: 110,
-                height: 110,
-                errorBuilder: (_, _, _) => const Icon(
-                  Icons.edit_note,
-                  size: 90,
-                  color: AppColors.brand,
-                ),
+              SvgPicture.asset(
+                'assets/logo/dawwenli-mark.svg',
+                width: 90,
+                height: 90,
               ),
               const SizedBox(height: 20),
-              const Text(
+              Text(
                 AppConstants.appName,
-                style: TextStyle(
-                  fontSize: 34,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.brand,
-                  letterSpacing: -0.5,
+                style: GoogleFonts.lemonada(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.ink,
                 ),
               ),
-              const SizedBox(height: 6),
-              const Text(
+              const SizedBox(height: 8),
+              Text(
                 AppConstants.appTagline,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppColors.textSecondaryLight,
+                style: GoogleFonts.tajawal(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.inkMuted,
                 ),
               ),
-              const SizedBox(height: 48),
+              const SizedBox(height: 40),
               const SizedBox(
-                width: 28,
-                height: 28,
+                width: 26,
+                height: 26,
                 child: CircularProgressIndicator(
                   color: AppColors.brand,
-                  strokeWidth: 2.5,
+                  strokeWidth: 2.2,
                 ),
               ),
             ],

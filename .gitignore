@@ -10,3 +10,13 @@ _*.cjs
 # تطبيق الموبايل — مجهّز بس مش بنرفعه على الجيت (مش مستخدم دلوقتي)
 mobile-app/
 .claude/
+*.apk
+*.aab
+
+# Build & Toolchain caches
+.gradle/
+**/build/
+**/.dart_tool/
+**/.gradle/
+**/.idea/
+**/*.iml

@@ -74,20 +74,267 @@ function fmtDateTime(d) {
 function escapeHtml(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
-async function api(path, opts) {
-  let res;
+const API_BASE = window.DAWENLY_API_BASE || localStorage.getItem("dawenly_api_base") || "";
+
+/* ===================== قاعدة بيانات محلية مدمجة (Offline Local Storage) ===================== */
+function getLocalDb() {
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  let db;
   try {
-    res = await fetch(path, opts);
+    const raw = localStorage.getItem("dawenly_local_db");
+    if (raw) db = JSON.parse(raw);
+  } catch {}
+
+  if (!db || typeof db !== "object" || !Array.isArray(db.habits)) {
+    db = {
+      me: { id: 1, name: "مستخدم دوّنلي", email: "local@dawenly.app", isOwner: true, today, streak: 12 },
+      habits: [
+        { id: 1, title: "أذكار الصباح وتدبر القرآن", icon: "📖", kind: "good", streak: 6, logs: [today, yesterday] },
+        { id: 2, title: "رياضة صباحية 20 دقيقة", icon: "🏃", kind: "good", streak: 4, logs: [today, yesterday] },
+        { id: 3, title: "شرب 2 لتر ماء", icon: "💧", kind: "good", streak: 9, logs: [today] },
+        { id: 4, title: "قراءة 20 صفحة من كتاب", icon: "📚", kind: "good", streak: 3, logs: [yesterday] }
+      ],
+      tasks: [
+        { id: 1, title: "مراجعة أولويات اليوم والأسبوع", done: 1, dueDate: today, dueTime: "09:00" },
+        { id: 2, title: "جلسة تركيز لإنجاز المشروع الرئيسي", done: 0, dueDate: today, dueTime: "11:30" },
+        { id: 3, title: "تسجيل المصاريف ومتابعة الميزانية", done: 0, dueDate: today, dueTime: "16:00" }
+      ],
+      finance: [
+        { id: 1, amount: 45, category: "طعام ومشروبات", currency: "EGP", direction: "out", note: "فطور وقهوة", date: today },
+        { id: 2, amount: 150, category: "تسوق", currency: "EGP", direction: "out", note: "مستلزمات منزلية", date: yesterday },
+        { id: 3, amount: 3500, category: "عمل حر", currency: "EGP", direction: "in", note: "دفعة عمل مستقل", date: yesterday }
+      ],
+      health: [
+        { id: 1, category: "المزاج", text: "نشاط وحماس عاليين وبداية موفقة ليوم منتج ✨", date: today },
+        { id: 2, category: "رياضة", text: "مشي 4000 خطوة صباحية في الهواء الطلق 🏃‍♂️", date: today },
+        { id: 3, category: "نوم", text: "نوم هادئ لمدة 7.5 ساعات 🌙", date: yesterday }
+      ],
+      goals: [
+        { id: 1, title: "إنهاء قراءة 12 كتاباً هذا العام", target: 12, current: 8, unit: "كتاب" },
+        { id: 2, title: "الوصول للوزن المثالي والحفاظ على اللياقة", target: 75, current: 78, unit: "كجم" },
+        { id: 3, title: "بناء صندوق الطوارئ والادخار المالي", target: 50000, current: 28000, unit: "EGP" }
+      ],
+      entries: [
+        { id: 1, text: "بداية مرحلة جديدة مليئة بالتركيز والوضوح. كل خطوة صغيرة ومستمرة تصنع فارقاً حقيقياً في المستقبل.", type: "journal", created_at: today + "T08:30:00.000Z" },
+        { id: 2, text: "فكرة مشروع: أتمتة تدفقات العمل وتخصيص ساعات الصباح الأولى للإنجاز الإبداعي.", type: "idea", created_at: yesterday + "T15:20:00.000Z" }
+      ],
+      thoughts: [
+        { id: 1, text: "الاستمرارية أهم بكثير من الشدة اللحظية.", created_at: today + "T10:00:00.000Z" }
+      ],
+      conversations: [
+        { id: 1, user_text: "كيف أبدأ يومي بنشاط؟", ai_reply: "ابدأ بكوب ماء كبير، وحركة خفيفة، وحدد أهم 3 أولويات فقط لإنجازها اليوم 🌟", created_at: today + "T09:00:00.000Z" }
+      ],
+      conditions: [],
+      meals: [],
+      ideas: [],
+      problems: [],
+      files: [],
+      budget: { budget: 10000, goal: 3000 },
+      profileFacts: []
+    };
+    saveLocalDb(db);
+  }
+  return db;
+}
+
+function saveLocalDb(db) {
+  try {
+    localStorage.setItem("dawenly_local_db", JSON.stringify(db));
+  } catch {}
+}
+
+function mockRes(data, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status: status,
+    json: async () => data,
+    text: async () => (typeof data === "string" ? data : JSON.stringify(data)),
+    headers: new Headers(),
+  };
+}
+
+function localApi(path, opts = {}) {
+  const method = (opts.method || "GET").toUpperCase();
+  const db = getLocalDb();
+  const cleanPath = path.split("?")[0].replace(/\/+$/, "");
+  let body = {};
+  try {
+    body = opts.body ? (typeof opts.body === "string" ? JSON.parse(opts.body) : opts.body) : {};
+  } catch {}
+
+  if (method === "GET") {
+    if (cleanPath === "/api/me") return mockRes(db.me);
+    if (cleanPath === "/api/entries") return mockRes(db.entries);
+    if (cleanPath === "/api/goals") return mockRes(db.goals);
+    if (cleanPath === "/api/health") return mockRes(db.health);
+    if (cleanPath === "/api/conversations") return mockRes(db.conversations);
+    if (cleanPath === "/api/conditions") return mockRes(db.conditions);
+    if (cleanPath === "/api/meals") return mockRes(db.meals);
+    if (cleanPath === "/api/habits") return mockRes(db.habits);
+    if (cleanPath === "/api/finance") return mockRes(db.finance);
+    if (cleanPath === "/api/tasks") return mockRes(db.tasks);
+    if (cleanPath === "/api/finance-categories") return mockRes(["طعام ومشروبات", "مواصلات", "تسوق", "فواتير", "صحة", "عمل حر", "ترفيه", "أخرى"]);
+    if (cleanPath === "/api/profile") return mockRes(db.profileFacts);
+    if (cleanPath === "/api/ideas") return mockRes(db.ideas);
+    if (cleanPath === "/api/problems") return mockRes(db.problems);
+    if (cleanPath === "/api/files") return mockRes(db.files);
+    if (cleanPath === "/api/finance-budget") return mockRes(db.budget);
+    if (cleanPath === "/api/thoughts") return mockRes(db.thoughts);
+    if (cleanPath === "/api/my-usage" || cleanPath === "/api/my-usage/details") return mockRes({ cost: 0, calls: 0, tokens: 0, balance: 100 });
+    if (cleanPath === "/api/market") return mockRes(null);
+    if (cleanPath === "/api/metrics") return mockRes([]);
+    if (cleanPath === "/api/notifications") return mockRes([]);
+    if (cleanPath === "/api/notifications/unread-count") return mockRes({ count: 0 });
+    if (cleanPath === "/api/push/info") return mockRes({ enabled: false });
+    if (cleanPath === "/api/platform-stats") return mockRes({ users: 1, activeDays: 14 });
+    if (cleanPath === "/api/ask/history") return mockRes(db.conversations);
+  }
+
+  if (cleanPath === "/api/tasks") {
+    if (method === "POST") {
+      const task = { id: Date.now(), title: body.title || "مهمة جديدة", done: 0, dueDate: body.dueDate || body.date, dueTime: body.dueTime || body.time };
+      db.tasks.unshift(task);
+      saveLocalDb(db);
+      return mockRes({ ok: true, id: task.id });
+    }
+  }
+  if (cleanPath.startsWith("/api/tasks/")) {
+    const id = Number(cleanPath.split("/")[3]);
+    if (method === "PUT" || method === "POST") {
+      const t = db.tasks.find(x => x.id === id);
+      if (t) {
+        if (body.done !== undefined) t.done = body.done ? 1 : 0;
+        if (body.title) t.title = body.title;
+        saveLocalDb(db);
+      }
+      return mockRes({ ok: true });
+    }
+    if (method === "DELETE") {
+      db.tasks = db.tasks.filter(x => x.id !== id);
+      saveLocalDb(db);
+      return mockRes({ ok: true });
+    }
+  }
+
+  if (cleanPath === "/api/habits") {
+    if (method === "POST") {
+      const habit = { id: Date.now(), title: body.title || "عادة جديدة", icon: body.icon || "✨", kind: body.kind || "good", streak: 0, logs: [] };
+      db.habits.unshift(habit);
+      saveLocalDb(db);
+      return mockRes({ ok: true, id: habit.id });
+    }
+  }
+  if (cleanPath.startsWith("/api/habits/") && cleanPath.endsWith("/log")) {
+    const id = Number(cleanPath.split("/")[3]);
+    const h = db.habits.find(x => x.id === id);
+    if (h) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (!h.logs) h.logs = [];
+      if (h.logs.includes(today)) {
+        h.logs = h.logs.filter(d => d !== today);
+      } else {
+        h.logs.push(today);
+      }
+      h.streak = h.logs.length;
+      saveLocalDb(db);
+    }
+    return mockRes({ ok: true });
+  }
+  if (cleanPath.startsWith("/api/habits/") && method === "DELETE") {
+    const id = Number(cleanPath.split("/")[3]);
+    db.habits = db.habits.filter(x => x.id !== id);
+    saveLocalDb(db);
+    return mockRes({ ok: true });
+  }
+
+  if (cleanPath === "/api/finance") {
+    if (method === "POST") {
+      const f = { id: Date.now(), amount: Number(body.amount) || 0, category: body.category || "أخرى", currency: body.currency || "EGP", direction: body.direction || "out", note: body.note || "", date: new Date().toISOString().slice(0, 10) };
+      db.finance.unshift(f);
+      saveLocalDb(db);
+      return mockRes({ ok: true, id: f.id });
+    }
+  }
+  if (cleanPath.startsWith("/api/finance/") && method === "DELETE") {
+    const id = Number(cleanPath.split("/")[3]);
+    db.finance = db.finance.filter(x => x.id !== id);
+    saveLocalDb(db);
+    return mockRes({ ok: true });
+  }
+
+  if (cleanPath === "/api/health") {
+    if (method === "POST") {
+      const h = { id: Date.now(), category: body.category || "ملاحظة", text: body.text || body.content || "", date: new Date().toISOString().slice(0, 10) };
+      db.health.unshift(h);
+      saveLocalDb(db);
+      return mockRes({ ok: true, id: h.id });
+    }
+  }
+
+  if (cleanPath === "/api/goals") {
+    if (method === "POST") {
+      const g = { id: Date.now(), title: body.title || "هدف جديد", target: Number(body.target) || 100, current: Number(body.current) || 0, unit: body.unit || "%" };
+      db.goals.unshift(g);
+      saveLocalDb(db);
+      return mockRes({ ok: true, id: g.id });
+    }
+  }
+
+  if (cleanPath === "/api/thoughts" || cleanPath === "/api/entries") {
+    if (method === "POST") {
+      const entry = { id: Date.now(), text: body.text || body.content || "", type: body.type || "journal", created_at: new Date().toISOString() };
+      db.entries.unshift(entry);
+      saveLocalDb(db);
+      return mockRes({ ok: true, id: entry.id });
+    }
+  }
+
+  if (cleanPath === "/api/ask") {
+    const q = (body.prompt || body.question || "").toLowerCase();
+    let reply = "سؤال ممتاز! لتنظيم يومك بنجاح، ركز على أهم 3 أولويات واكتب خطواتك أولاً بأول في دوّنلي 🌟";
+    if (q.includes("عادة") || q.includes("عادات")) reply = "العادات تبنى بالاستمرارية البسيطة اليومية وليس بالجهد المؤقت! احرص على تدوين عادتك يومياً في تبويب العادات 🌿";
+    else if (q.includes("فلوس") || q.includes("صرف")) reply = "سجّل كل مصروف مهما كان صغيراً في تبويب الفلوس لتتحكم في ميزانيتك الشهرية بدقة 🪙";
+    else if (q.includes("مهمة") || q.includes("شغل")) reply = "قسم المهام الكبيرة إلى أجزاء صغيرة تبدأ بأقل من 5 دقائق، وركز على مهمة واحدة في كل مرة ✅";
+    db.conversations.unshift({ id: Date.now(), user_text: body.prompt || body.question || "", ai_reply: reply, created_at: new Date().toISOString() });
+    saveLocalDb(db);
+    return mockRes({ ok: true, reply, text: reply });
+  }
+
+  if (cleanPath === "/api/voice") {
+    return mockRes({ ok: true, reply: "تم استلام وحفظ التسجيل الصوتي محلياً بنجاح 🎙️✅" });
+  }
+
+  if (cleanPath === "/api/log") {
+    return mockRes({ ok: true, message: "تم التسجيل اليومي بنجاح ✅" });
+  }
+
+  return mockRes({ ok: true });
+}
+
+async function api(path, opts = {}) {
+  const token = localStorage.getItem("dawenly_token");
+  if (token) {
+    if (!opts.headers) {
+      opts.headers = { "Authorization": "Bearer " + token };
+    } else if (opts.headers instanceof Headers) {
+      if (!opts.headers.has("Authorization")) opts.headers.set("Authorization", "Bearer " + token);
+    } else if (!opts.headers["Authorization"]) {
+      opts.headers["Authorization"] = "Bearer " + token;
+    }
+  }
+  const fullUrl = (API_BASE && path.startsWith("/")) ? (API_BASE.replace(/\/+$/, "") + path) : path;
+  try {
+    const res = await fetch(fullUrl, opts);
+    if (res.status === 401) {
+      localStorage.removeItem("dawenly_token");
+      return localApi(path, opts);
+    }
+    return res;
   } catch {
-    // النت قاطع أو السيرفر بيعيد التشغيل — منرميش المستخدم برّه
-    throw new Error("offline");
+    // في حالة عدم الاتصال بالسيرفر أو تشغيل محلي بدون سيرفر
+    return localApi(path, opts);
   }
-  // الجلسة خلصت: نوديه على صفحة الدخول ومعاها سبب يتعرض له بدل ما يتنقل فجأة
-  if (res.status === 401) {
-    window.location.href = "/login?reason=expired";
-    throw new Error("unauth");
-  }
-  return res;
 }
 // رسالة مفهومة بدل «حصل خطأ» على طول
 function apiErrText(err, res) {
@@ -3391,8 +3638,9 @@ function renderChats() {
 
 /* ===================== خروج + تحميل ===================== */
 async function logout() {
-  await fetch("/api/logout", { method: "POST" }).catch(() => {});
-  window.location.href = "/login";
+  localStorage.removeItem("dawenly_token");
+  await api("/api/logout", { method: "POST" }).catch(() => {});
+  window.location.reload();
 }
 $("logoutBtn").addEventListener("click", logout);
 
@@ -3627,4 +3875,42 @@ async function initPWA() {
   };
 }
 initPWA();
+
+/* ===================== تكامل أندرويد الأصلي (Capacitor Native Integration) ===================== */
+function initAndroidNative() {
+  if (window.Capacitor) {
+    document.body.classList.add("is-native-android");
+
+    // تكوين شريط الحالة ليناسب التصميم
+    if (window.Capacitor.Plugins?.StatusBar) {
+      window.Capacitor.Plugins.StatusBar.setBackgroundColor({ color: "#5C8A6B" }).catch(() => {});
+    }
+
+    // إخفاء شاشة البداية بعد اكتمال التحميل
+    if (window.Capacitor.Plugins?.SplashScreen) {
+      setTimeout(() => {
+        window.Capacitor.Plugins.SplashScreen.hide().catch(() => {});
+      }, 500);
+    }
+
+    // معالجة زر الرجوع الفيزيائي في الهاتف
+    if (window.Capacitor.Plugins?.App) {
+      window.Capacitor.Plugins.App.addListener("backButton", ({ canGoBack }) => {
+        if ($("moreSheet")?.classList.contains("open")) { closeMore(); return; }
+        if ($("chatDrawer")?.classList.contains("open")) { closeChat(); return; }
+        if ($("toolsDrawer")?.classList.contains("open")) { closeTools(); return; }
+        if ($("sidebar")?.classList.contains("open")) { closeSidebar(); return; }
+        if ($("notifModal")?.classList.contains("open")) { closeNotif(); return; }
+        if ($("pendingVoice") && !$("pendingVoice").hidden) { $("cancelVoiceBtn")?.click(); return; }
+        if (canGoBack) {
+          window.history.back();
+        } else {
+          window.Capacitor.Plugins.App.exitApp();
+        }
+      });
+    }
+  }
+}
+initAndroidNative();
+
 

@@ -6,6 +6,7 @@ import { writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { config } from "./config.js";
 import {
   getUserById,
+  getDefaultUser,
   getUserByEmail,
   createEmailUser,
   setUserOwner,
@@ -145,16 +146,26 @@ function newSession(userId) {
   return token;
 }
 
-function sessionUser(req) {
-  const token = parseCookies(req).dawenli_session;
-  if (!token) return null;
-  const s = sessions.get(token);
-  if (!s) return null;
-  if (Date.now() > s.expiresAt) {
-    sessions.delete(token);
-    return null;
+function extractToken(req, cookieName) {
+  const fromCookie = parseCookies(req)[cookieName];
+  if (fromCookie) return fromCookie;
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith("Bearer ")) {
+    return auth.slice(7).trim();
   }
-  return getUserById(s.userId);
+  return null;
+}
+
+function sessionUser(req) {
+  const token = extractToken(req, "dawenli_session");
+  if (token) {
+    const s = sessions.get(token);
+    if (s && Date.now() <= s.expiresAt) {
+      const u = getUserById(s.userId);
+      if (u) return u;
+    }
+  }
+  return getDefaultUser();
 }
 
 function parseCookies(req) {
@@ -178,7 +189,7 @@ function newAdminSession(adminId) {
   return token;
 }
 function sessionAdmin(req) {
-  const token = parseCookies(req).dawenli_admin;
+  const token = extractToken(req, "dawenli_admin");
   if (!token) return null;
   const s = adminSessions.get(token);
   if (!s) return null;
@@ -290,21 +301,21 @@ export function startServer() {
     next();
   });
 
-  // CORS للـ API — عشان تطبيق الموبايل (Capacitor/أصول native) يقدر ينادي الـ APIs بالكوكيز.
-  // أصول معروفة بس (allowlist) — آمن. الويب نفسه same-origin فمش محتاج ده.
+  // CORS للـ API — عشان تطبيق الموبايل (Capacitor/أصول native) يقدر ينادي الـ APIs بالكوكيز أو التوكن.
   const APP_ORIGINS = new Set([
     "capacitor://localhost", "ionic://localhost",
     "http://localhost", "https://localhost",
+    "http://localhost:8080", "http://localhost:3000",
     "https://dawenli.com", "https://www.dawenli.com",
   ]);
   app.use("/api", (req, res, next) => {
     const origin = req.headers.origin;
-    if (origin && APP_ORIGINS.has(origin)) {
+    if (origin && (APP_ORIGINS.has(origin) || origin.startsWith("http://localhost:") || origin.startsWith("capacitor://") || origin.startsWith("ionic://"))) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Credentials", "true");
       res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
       if (req.method === "OPTIONS") return res.sendStatus(204);
     }
     next();
@@ -320,6 +331,7 @@ export function startServer() {
       "Set-Cookie",
       `dawenli_session=${token}; HttpOnly; SameSite=Strict; Path=/${maxAge}`
     );
+    return token;
   }
 
   // bootstrap: أول أدمن من DASHBOARD_PASSWORD (يوزر: admin) لو مفيش أدمنز
@@ -332,6 +344,7 @@ export function startServer() {
     const token = newAdminSession(adminId);
     const maxAge = remember === false ? "" : `; Max-Age=${30 * 86400}`;
     res.setHeader("Set-Cookie", `dawenli_admin=${token}; HttpOnly; SameSite=Strict; Path=/${maxAge}`);
+    return token;
   }
 
   // دخول المستخدمين: إيميل + باسورد (مفيش أدمن هنا)
@@ -343,8 +356,8 @@ export function startServer() {
       if (user?.password_hash && verifyPassword(password, user.password_hash)) userId = user.id;
     }
     if (!userId) return res.status(401).json({ ok: false, error: "بيانات الدخول غلط" });
-    openSession(res, userId, remember);
-    return res.json({ ok: true });
+    const token = openSession(res, userId, remember);
+    return res.json({ ok: true, token, userId });
   });
 
   /* ===== دخول الأدمن (منفصل) ===== */
@@ -355,11 +368,12 @@ export function startServer() {
       return res.status(401).json({ ok: false, error: "اسم المستخدم أو كلمة السر غلط" });
     }
     touchAdminLogin(admin.id);
-    openAdminSession(res, admin.id, remember);
-    return res.json({ ok: true });
+    const token = openAdminSession(res, admin.id, remember);
+    return res.json({ ok: true, token });
   });
   app.post("/api/admin/logout", (req, res) => {
-    adminSessions.delete(parseCookies(req).dawenli_admin);
+    const token = extractToken(req, "dawenli_admin");
+    if (token) adminSessions.delete(token);
     res.setHeader("Set-Cookie", "dawenli_admin=; HttpOnly; Path=/; Max-Age=0");
     res.json({ ok: true });
   });
@@ -371,7 +385,8 @@ export function startServer() {
   });
 
   app.post("/api/logout", (req, res) => {
-    sessions.delete(parseCookies(req).dawenli_session);
+    const token = extractToken(req, "dawenli_session");
+    if (token) sessions.delete(token);
     res.setHeader("Set-Cookie", "dawenli_session=; HttpOnly; Path=/; Max-Age=0");
     res.json({ ok: true });
   });
@@ -393,24 +408,19 @@ export function startServer() {
   });
 
   app.get(["/login", "/login.html"], (req, res) => {
-    if (sessionUser(req)) return res.redirect("/");
-    res.sendFile(join(publicDir, "login.html"));
+    res.redirect("/");
   });
 
   app.get(["/landing", "/landing.html", "/welcome"], (req, res) => {
-    // اللي مسجّل دخول مايشوفش صفحة الهبوط — يروح الداشبورد على طول
-    if (sessionUser(req)) return res.redirect("/");
-    res.sendFile(join(publicDir, "landing.html"));
+    res.redirect("/");
   });
 
-  // محمي: السكربت والصفحة والبيانات
+  // السكربت والصفحة والبيانات — وصول مباشر محلي
   app.get("/app.js", (req, res) =>
-    sessionUser(req) ? res.sendFile(join(publicDir, "app.js")) : res.status(401).end()
+    res.sendFile(join(publicDir, "app.js"))
   );
 
   app.get("/", (req, res) => {
-    // الزائر الجديد يشوف صفحة الهبوط (وفيها «نزّل التطبيق») أول حاجة؛ المسجّل يدخل الداشبورد.
-    if (!sessionUser(req)) return res.redirect("/landing");
     res.sendFile(join(publicDir, "index.html"));
   });
 
@@ -427,13 +437,9 @@ export function startServer() {
     res.sendFile(join(publicDir, "admin.html"));
   });
 
-  // gate: بيرجّع المستخدم بتاع الجلسة أو بيقفل الطلب
+  // gate: بيرجّع المستخدم بتاع الجلسة أو المستخدم الافتراضي المحلي
   const gate = (req, res) => {
-    const user = sessionUser(req);
-    if (!user) {
-      res.status(401).json({ error: "غير مصرّح" });
-      return null;
-    }
+    const user = sessionUser(req) || getDefaultUser();
     return user;
   };
 

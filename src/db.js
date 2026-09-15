@@ -421,6 +421,14 @@ export function touchUser(id) {
 export function ownerUser() {
   return ownerStmt.get() || null;
 }
+export function getDefaultUser() {
+  const owner = ownerStmt.get();
+  if (owner) return owner;
+  const first = db.prepare(`SELECT * FROM users ORDER BY id ASC LIMIT 1`).get();
+  if (first) return first;
+  const info = insertUserStmt.run(now(), null, "مستخدم دوّنلي", 1, now());
+  return getUserById(Number(info.lastInsertRowid));
+}
 export function listUsers() {
   return db.prepare(`SELECT * FROM users ORDER BY id`).all();
 }

@@ -70,6 +70,10 @@ form.addEventListener("submit", async (e) => {
       body: JSON.stringify(body),
     });
     if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (data.token) {
+        localStorage.setItem("dawenly_token", data.token);
+      }
       window.location.href = "/";
       return;
     }

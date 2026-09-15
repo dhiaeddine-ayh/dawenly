@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/constants.dart';
+import '../core/design_system/daftar_topbar.dart';
+import '../core/design_system/daftar_bottom_nav.dart';
+import '../core/design_system/daftar_fabs.dart';
 import '../providers/data_provider.dart';
-import '../widgets/dw_topbar.dart';
 import '../widgets/dw_bottom_nav.dart';
 import '../widgets/dw_sidebar.dart';
-import '../widgets/dw_fabs.dart';
 import '../widgets/more_sheet.dart';
 import '../widgets/notif_modal.dart';
 import '../widgets/voice_modal.dart';
@@ -153,7 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Scaffold(
         key: _scaffoldKey,
         backgroundColor: AppColors.paper,
-        appBar: DwTopbar(
+        appBar: DaftarTopBar(
           onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
           onRefresh: _handleRefresh,
           onNotificationsPressed: () => NotifModal.show(context),
@@ -178,17 +179,17 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         body: Stack(
           children: [
-            // محتوى الصفحة الحالية مع انتقال سلس
+            // محتوى الصفحة الحالية
             AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
+              duration: const Duration(milliseconds: 200),
               child: KeyedSubtree(
                 key: ValueKey(_currentTab),
                 child: _buildCurrentView(),
               ),
             ),
 
-            // الأزرار العائمة (مايك + أدوات)
-            DwFabs(
+            // الأزرار العائمة مع الهالات الناعمة المطابقة للقطة الشاشة
+            DaftarFabs(
               onVoicePressed: () => VoiceModal.show(context),
               onToolsPressed: () {
                 Navigator.push(
@@ -199,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-        bottomNavigationBar: DwBottomNav(
+        bottomNavigationBar: DaftarBottomNav(
           currentTab: _currentTab,
           onTabSelected: _onTabSelected,
           onMorePressed: _openMoreSheet,

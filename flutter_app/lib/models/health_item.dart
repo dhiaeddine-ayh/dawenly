@@ -13,6 +13,8 @@ class HealthItemModel {
     this.time,
   });
 
+  String get title => content.isNotEmpty ? content : category;
+
   factory HealthItemModel.fromJson(Map<String, dynamic> json) {
     return HealthItemModel(
       id: json['id'] is int ? json['id'] : int.tryParse(json['id'].toString()) ?? 0,

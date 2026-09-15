@@ -518,14 +518,25 @@ export function startServer() {
       // المفتاح مايتبعتش كامل أبدًا — آخر ٤ حروف للتأكيد بس
       keyHint: s.apiKey ? `…${s.apiKey.slice(-4)}` : null,
       hasVoiceKey: !!s.voiceKey,
+      ttsModel: s.ttsModel,
+      ttsVoice: s.ttsVoice,
+      hasTtsKey: !!s.ttsKey,
+      ttsKeyHint: s.ttsKey ? `…${s.ttsKey.slice(-4)}` : null,
       providers: Object.fromEntries(
-        Object.entries(PROVIDERS).map(([k, p]) => [k, { label: p.label, defaultModel: p.defaultModel }])
+        Object.entries(PROVIDERS).map(([k, p]) => [
+          k,
+          {
+            label: p.label,
+            defaultModel: p.defaultModel,
+            defaultTtsModel: p.defaultTtsModel || "deepgram/flux-tts:free",
+          },
+        ])
       ),
     });
   });
   app.put("/api/admin/ai-settings", (req, res) => {
     if (!ownerGate(req, res)) return;
-    const { provider, api_key, model, base_url, voice_key } = req.body || {};
+    const { provider, api_key, model, base_url, voice_key, tts_model, tts_voice, tts_key } = req.body || {};
     if (!PROVIDERS[provider]) return res.status(400).json({ error: "اختار مزود صحيح" });
     const existing = aiSettings();
     if (!api_key && existing.source !== "db") return res.status(400).json({ error: "حط مفتاح الـ API" });
@@ -537,6 +548,9 @@ export function startServer() {
       model: model || PROVIDERS[provider].defaultModel,
       baseUrl: provider === "custom" ? base_url : undefined,
       voiceKey: voice_key !== undefined ? voice_key : undefined,
+      ttsModel: tts_model !== undefined ? tts_model : undefined,
+      ttsVoice: tts_voice !== undefined ? tts_voice : undefined,
+      ttsKey: tts_key !== undefined ? tts_key : undefined,
     });
     res.json({ ok: true });
   });
@@ -561,6 +575,81 @@ export function startServer() {
     } catch (err) {
       const friendly = aiErrorMessage(err);
       res.json({ ok: false, model: testModel, error: friendly || String(err?.message || err).slice(0, 300) });
+    }
+  });
+
+  // اختبار تحويل النص لصوت (TTS) حي عبر OpenRouter (deepgram/flux-tts:free) أو OpenAI
+  app.post("/api/admin/ai-settings/test-tts", async (req, res) => {
+    if (!ownerGate(req, res)) return;
+    const { model, voice, key, provider } = req.body || {};
+    const s = aiSettings();
+    const testModel = model || s.ttsModel || "deepgram/flux-tts:free";
+    const testVoice = voice || s.ttsVoice || "aura-asteria";
+    const isOpenRouter =
+      testModel.includes("flux-tts") ||
+      testModel.includes("deepgram") ||
+      provider === "openrouter" ||
+      s.provider === "openrouter" ||
+      (key && String(key).startsWith("sk-or-"));
+
+    const testKey = key || s.ttsKey || (isOpenRouter ? (s.provider === "openrouter" ? s.apiKey : "") : (s.voiceKey || s.apiKey));
+
+    if (!testKey) {
+      return res.status(400).json({
+        ok: false,
+        error: isOpenRouter
+          ? "مطلوب مفتاح OpenRouter لتجربة النطق الصوتي"
+          : "مطلوب مفتاح OpenAI لتجربة النطق الصوتي",
+      });
+    }
+
+    try {
+      if (isOpenRouter) {
+        const resp = await fetch("https://openrouter.ai/api/v1/audio/speech", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${testKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://dawenly.app",
+            "X-Title": "Dawenly",
+          },
+          body: JSON.stringify({
+            model: testModel,
+            input: "مرحباً، تم ضبط الصوت ونظام النطق بنجاح في دوّنلي!",
+            voice: testVoice,
+          }),
+        });
+        if (!resp.ok) {
+          const t = await resp.text().catch(() => "");
+          return res.json({ ok: false, error: `OpenRouter Error (${resp.status}): ${t.slice(0, 200)}` });
+        }
+        const buf = Buffer.from(await resp.arrayBuffer());
+        return res.json({
+          ok: true,
+          model: testModel,
+          voice: testVoice,
+          sizeBytes: buf.length,
+          audioBase64: buf.toString("base64"),
+        });
+      } else {
+        const tc = new OpenAI({ apiKey: testKey });
+        const r = await tc.audio.speech.create({
+          model: testModel.includes("tts") ? testModel : "tts-1",
+          voice: testVoice.startsWith("aura-") ? "alloy" : testVoice,
+          input: "مرحباً، تم ضبط الصوت بنجاح في دوّنلي!",
+          response_format: "mp3",
+        });
+        const buf = Buffer.from(await r.arrayBuffer());
+        return res.json({
+          ok: true,
+          model: testModel,
+          voice: testVoice,
+          sizeBytes: buf.length,
+          audioBase64: buf.toString("base64"),
+        });
+      }
+    } catch (err) {
+      res.json({ ok: false, error: String(err?.message || err).slice(0, 300) });
     }
   });
 
@@ -897,13 +986,16 @@ export function startServer() {
     const text = String(req.body?.text || "").trim();
     if (!text) return res.status(400).json({ error: "مفيش نص" });
     try {
-      const buf = await textToSpeech(text, user.id);
+      const buf = await textToSpeech(text, user.id, {
+        model: req.body?.model,
+        voice: req.body?.voice,
+      });
       res.setHeader("Content-Type", "audio/mpeg");
       res.setHeader("Cache-Control", "no-store");
       res.send(buf);
     } catch (err) {
       console.error("tts error:", err);
-      res.status(500).json({ error: "فشل تحويل النص لصوت" });
+      res.status(500).json({ error: err?.message || "فشل تحويل النص لصوت" });
     }
   });
 

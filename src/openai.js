@@ -21,6 +21,13 @@ export const PROVIDERS = {
     fastModel: "gemini-3.5-flash-lite",
   },
   xai: { label: "xAI (Grok)", baseURL: "https://api.x.ai/v1", defaultModel: "grok-4.6", fastModel: "grok-4.3" },
+  openrouter: {
+    label: "OpenRouter",
+    baseURL: "https://openrouter.ai/api/v1",
+    defaultModel: "deepseek/deepseek-chat",
+    fastModel: "deepseek/deepseek-chat",
+    defaultTtsModel: "deepgram/flux-tts:free",
+  },
   custom: { label: "مخصص (متوافق OpenAI)", baseURL: "", defaultModel: "", fastModel: "" },
 };
 
@@ -28,6 +35,10 @@ export const PROVIDERS = {
 export function aiSettings() {
   const dbProvider = getSetting("ai_provider");
   const dbKey = getSetting("ai_api_key");
+  const dbTtsModel = getSetting("ai_tts_model");
+  const dbTtsVoice = getSetting("ai_tts_voice");
+  const dbTtsKey = getSetting("ai_tts_key");
+
   if (dbProvider && dbKey) {
     const p = PROVIDERS[dbProvider] || PROVIDERS.custom;
     return {
@@ -37,6 +48,9 @@ export function aiSettings() {
       model: getSetting("ai_chat_model") || p.defaultModel,
       fastModel: getSetting("ai_fast_model") || p.fastModel || getSetting("ai_chat_model") || p.defaultModel,
       voiceKey: dbProvider === "openai" ? dbKey : getSetting("ai_voice_key") || config.openaiKey || "",
+      ttsModel: dbTtsModel || p.defaultTtsModel || config.ttsModel || "deepgram/flux-tts:free",
+      ttsVoice: dbTtsVoice || (dbProvider === "openrouter" ? "aura-asteria" : (config.ttsVoice || "aura-asteria")),
+      ttsKey: dbTtsKey || (dbProvider === "openrouter" ? dbKey : ""),
       source: "db",
     };
   }
@@ -48,22 +62,39 @@ export function aiSettings() {
       model: config.agentModel,
       fastModel: "gpt-4o-mini",
       voiceKey: config.openaiKey,
+      ttsModel: dbTtsModel || config.ttsModel || "tts-1",
+      ttsVoice: dbTtsVoice || config.ttsVoice || "alloy",
+      ttsKey: dbTtsKey || "",
       source: "env",
     };
   }
-  return { provider: null, apiKey: "", baseURL: null, model: "", fastModel: "", voiceKey: "", source: "none" };
+  return {
+    provider: null,
+    apiKey: "",
+    baseURL: null,
+    model: "",
+    fastModel: "",
+    voiceKey: "",
+    ttsModel: dbTtsModel || "deepgram/flux-tts:free",
+    ttsVoice: dbTtsVoice || "aura-asteria",
+    ttsKey: dbTtsKey || "",
+    source: "none",
+  };
 }
 
 export function aiConfigured() {
   return !!aiSettings().apiKey;
 }
-export function saveAiSettings({ provider, apiKey, model, baseUrl, voiceKey, fastModel }) {
+export function saveAiSettings({ provider, apiKey, model, baseUrl, voiceKey, fastModel, ttsModel, ttsVoice, ttsKey }) {
   if (provider !== undefined) setSetting("ai_provider", provider);
   if (apiKey !== undefined && apiKey !== "") setSetting("ai_api_key", apiKey); // فاضي = سيب المفتاح القديم
   if (model !== undefined) setSetting("ai_chat_model", model);
   if (fastModel !== undefined) setSetting("ai_fast_model", fastModel);
   if (baseUrl !== undefined) setSetting("ai_base_url", baseUrl);
   if (voiceKey !== undefined) setSetting("ai_voice_key", voiceKey);
+  if (ttsModel !== undefined) setSetting("ai_tts_model", ttsModel);
+  if (ttsVoice !== undefined) setSetting("ai_tts_voice", ttsVoice);
+  if (ttsKey !== undefined && ttsKey !== "") setSetting("ai_tts_key", ttsKey);
   refreshAi();
 }
 
@@ -338,19 +369,74 @@ export async function classifyImage({ base64, mime, userId }) {
 
 /* ===================== تحويل النص لصوت (TTS) ===================== */
 
-export async function textToSpeech(text, userId) {
-  const model = config.ttsModel;
+export async function textToSpeech(text, userId, options = {}) {
+  const s = aiSettings();
+  const model = options.model || s.ttsModel || "deepgram/flux-tts:free";
+  const voice = options.voice || s.ttsVoice || "aura-asteria";
   const input = String(text || "").slice(0, 2000);
+
+  // إذا كان الموديل هو deepgram/flux-tts:free أو تابع لـ OpenRouter
+  const isOpenRouter =
+    model.includes("flux-tts") ||
+    model.includes("deepgram") ||
+    s.provider === "openrouter" ||
+    (s.ttsKey && s.ttsKey.startsWith("sk-or-"));
+
+  if (isOpenRouter) {
+    const key = s.ttsKey || (s.provider === "openrouter" ? s.apiKey : "");
+    if (!key) {
+      const err = new Error("نطق الصوت عبر OpenRouter محتاج مفتاح API (حطه في إعدادات الذكاء ← مفتاح OpenRouter)");
+      err.code = "TTS_KEY_REQUIRED";
+      throw err;
+    }
+
+    const resp = await fetch("https://openrouter.ai/api/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${key}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://dawenly.app",
+        "X-Title": "Dawenly",
+      },
+      body: JSON.stringify({
+        model,
+        input,
+        voice,
+      }),
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      let msg = `OpenRouter TTS Error: HTTP ${resp.status}`;
+      try {
+        const j = JSON.parse(errText);
+        msg = j.error?.message || j.message || msg;
+      } catch (_) {
+        if (errText) msg += ` - ${errText.slice(0, 150)}`;
+      }
+      throw new Error(msg);
+    }
+
+    const arrayBuffer = await resp.arrayBuffer();
+    const buf = Buffer.from(arrayBuffer);
+    try {
+      const cost = model.includes(":free") ? 0 : (input.length / 1e6) * 12;
+      recordAiUsage({ userId, kind: "tts", model, costUsd: cost });
+    } catch {}
+    return buf;
+  }
+
+  // OpenAI TTS fallback
   const res = await voiceClient().audio.speech.create({
-    model,
-    voice: config.ttsVoice,
+    model: model.includes("tts") ? model : "tts-1",
+    voice: voice.startsWith("aura-") ? "alloy" : voice,
     input,
     response_format: "mp3",
   });
   const buf = Buffer.from(await res.arrayBuffer());
   try {
-    // تكلفة TTS تقريبية بالحروف (~$12 لكل مليون حرف لموديل mini)
     recordAiUsage({ userId, kind: "tts", model, costUsd: (input.length / 1e6) * 12 });
   } catch {}
   return buf;
 }
+

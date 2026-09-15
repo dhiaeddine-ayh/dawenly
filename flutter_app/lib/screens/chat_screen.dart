@@ -1,10 +1,13 @@
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../core/api_client.dart';
 import '../core/constants.dart';
 import '../core/design_system/sketch_button.dart';
 import '../providers/chat_provider.dart';
+import '../services/direct_ai_service.dart';
 import '../widgets/voice_modal.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -17,8 +20,13 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final DirectAiService _directAi = DirectAiService();
+  final ApiClient _api = ApiClient();
+
   String _selectedScope = 'all';
   bool _isLiveCallActive = false;
+  String? _currentlyPlayingMessageId;
+  bool _isLoadingAudio = false;
 
   final List<Map<String, String>> _scopes = [
     {'key': 'all', 'label': 'كل التدوينات 🌐'},
@@ -39,9 +47,79 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _directAi.stopAudio();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _speakMessage(dynamic msg) async {
+    final msgId = msg.id?.toString() ?? msg.text.hashCode.toString();
+
+    // إذا كانت الرسالة تعمل حالياً، نقوم بإيقافها
+    if (_currentlyPlayingMessageId == msgId) {
+      await _directAi.stopAudio();
+      if (mounted) setState(() => _currentlyPlayingMessageId = null);
+      return;
+    }
+
+    await _directAi.stopAudio();
+    if (mounted) {
+      setState(() {
+        _currentlyPlayingMessageId = msgId;
+        _isLoadingAudio = true;
+      });
+    }
+
+    try {
+      // 1. محاولة النطق المباشر عبر DirectAiService (موديل deepgram/flux-tts:free أو OpenAI)
+      final played = await _directAi.playSpeech(msg.text, onComplete: () {
+        if (mounted && _currentlyPlayingMessageId == msgId) {
+          setState(() {
+            _currentlyPlayingMessageId = null;
+            _isLoadingAudio = false;
+          });
+        }
+      });
+
+      if (played) {
+        if (mounted) setState(() => _isLoadingAudio = false);
+        return;
+      }
+
+      // 2. إذا لم يكن مهيأ محلياً، نطلب الصوت من الخادم /api/tts
+      final res = await _api.post('/api/tts', body: {'text': msg.text});
+      if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+        if (mounted) setState(() => _isLoadingAudio = false);
+        final player = _directAi.player;
+        player.onPlayerComplete.first.then((_) {
+          if (mounted && _currentlyPlayingMessageId == msgId) {
+            setState(() => _currentlyPlayingMessageId = null);
+          }
+        });
+        await player.play(BytesSource(res.bodyBytes));
+        return;
+      }
+    } catch (e) {
+      debugPrint('TTS speak error: $e');
+    }
+
+    if (mounted) {
+      setState(() {
+        _currentlyPlayingMessageId = null;
+        _isLoadingAudio = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'تعذر تشغيل الصوت. يرجى ضبط مفتاح OpenRouter من الإعدادات ⚙️',
+            style: GoogleFonts.tajawal(),
+          ),
+          backgroundColor: AppColors.brandDeep,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   void _scrollToBottom() {
@@ -415,6 +493,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildNotebookMessageBubble(dynamic msg) {
     final isUser = msg.isUser;
+    final msgId = msg.id?.toString() ?? msg.text.hashCode.toString();
+    final isPlayingThis = _currentlyPlayingMessageId == msgId;
+    final isLoadingThis = isPlayingThis && _isLoadingAudio;
 
     return Align(
       alignment: isUser ? Alignment.centerLeft : Alignment.centerRight,
@@ -446,16 +527,62 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             if (!isUser) ...[
               Row(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('🧠', style: TextStyle(fontSize: 12)),
-                  const SizedBox(width: 4),
-                  Text(
-                    'دوّنلي',
-                    style: GoogleFonts.tajawal(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.brandDeep,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('🧠', style: TextStyle(fontSize: 12)),
+                      const SizedBox(width: 4),
+                      Text(
+                        'دوّنلي',
+                        style: GoogleFonts.tajawal(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.brandDeep,
+                        ),
+                      ),
+                    ],
+                  ),
+                  // زر الاستماع للصوت بنموذج deepgram/flux-tts:free
+                  InkWell(
+                    onTap: () => _speakMessage(msg),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isPlayingThis ? AppColors.brandWash : Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isPlayingThis ? AppColors.brand : AppColors.inkFaint,
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isLoadingThis)
+                            const SizedBox(
+                              width: 10,
+                              height: 10,
+                              child: CircularProgressIndicator(strokeWidth: 1.5, color: AppColors.brand),
+                            )
+                          else
+                            Text(
+                              isPlayingThis ? '⏹️' : '🔊',
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                          const SizedBox(width: 3),
+                          Text(
+                            isPlayingThis ? 'إيقاف' : 'استمع',
+                            style: GoogleFonts.tajawal(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: isPlayingThis ? AppColors.brandDeep : AppColors.inkMuted,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],

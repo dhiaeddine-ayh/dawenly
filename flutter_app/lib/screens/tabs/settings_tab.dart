@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -29,6 +30,8 @@ class _SettingsTabState extends State<SettingsTab> {
 
   bool _obscureApiKey = true;
   bool _obscureVoiceKey = true;
+  bool _obscureTtsKey = true;
+  bool _isTestingTts = false;
 
   String _provider = 'custom';
   final TextEditingController _apiKeyController = TextEditingController();
@@ -36,6 +39,14 @@ class _SettingsTabState extends State<SettingsTab> {
   final TextEditingController _baseUrlController = TextEditingController();
   final TextEditingController _voiceKeyController = TextEditingController();
   final TextEditingController _serverUrlController = TextEditingController();
+
+  // إعدادات الصوت والنطق TTS
+  String _ttsModel = 'deepgram/flux-tts:free';
+  String _ttsVoice = 'aura-asteria';
+  final TextEditingController _ttsKeyController = TextEditingController();
+  final TextEditingController _ttsModelController = TextEditingController(text: 'deepgram/flux-tts:free');
+  Map<String, dynamic>? _ttsTestResult;
+  String? _ttsKeyHint;
 
   String? _keyHint;
   bool _configured = false;
@@ -48,10 +59,25 @@ class _SettingsTabState extends State<SettingsTab> {
 
   final Map<String, Map<String, String>> _providersInfo = {
     'custom': {'label': 'مخصص (OpenAI-compatible) 🔌', 'defaultModel': 'gpt-5'},
+    'openrouter': {'label': 'OpenRouter (يدعم النطق المجاني) 🌐', 'defaultModel': 'deepseek/deepseek-chat'},
     'openai': {'label': 'OpenAI 🤖', 'defaultModel': 'gpt-4o'},
     'gemini': {'label': 'Google Gemini ♊', 'defaultModel': 'gemini-2.5-flash'},
     'xai': {'label': 'xAI (Grok) ⚡', 'defaultModel': 'grok-4.6'},
   };
+
+  final List<Map<String, String>> _deepgramVoices = [
+    {'id': 'aura-asteria', 'label': 'Asteria (أنثوي واضح 🌸 - الافتراضي)'},
+    {'id': 'aura-luna', 'label': 'Luna (أنثوي هادئ 🌙)'},
+    {'id': 'aura-stella', 'label': 'Stella (أنثوي مشرق ✨)'},
+    {'id': 'aura-athena', 'label': 'Athena (أنثوي واثق ورسمي 🏛️)'},
+    {'id': 'aura-hera', 'label': 'Hera (أنثوي دافئ 🌿)'},
+    {'id': 'aura-orion', 'label': 'Orion (ذكوري هادئ ومتزن 🎙️)'},
+    {'id': 'aura-arcas', 'label': 'Arcas (ذكوري عميق 🏔️)'},
+    {'id': 'aura-perseus', 'label': 'Perseus (ذكوري حيوي ⚡)'},
+    {'id': 'aura-angus', 'label': 'Angus (ذكوري ناعم 🍂)'},
+    {'id': 'aura-helios', 'label': 'Helios (ذكوري قوي ☀️)'},
+    {'id': 'aura-zeus', 'label': 'Zeus (ذكوري فخم 👑)'},
+  ];
 
   @override
   void initState() {
@@ -67,6 +93,8 @@ class _SettingsTabState extends State<SettingsTab> {
     _baseUrlController.dispose();
     _voiceKeyController.dispose();
     _serverUrlController.dispose();
+    _ttsKeyController.dispose();
+    _ttsModelController.dispose();
     super.dispose();
   }
 
@@ -85,6 +113,15 @@ class _SettingsTabState extends State<SettingsTab> {
       _source = 'local';
     }
 
+    _ttsModel = _directAi.ttsModel;
+    _ttsVoice = _directAi.ttsVoice;
+    _ttsModelController.text = _ttsModel;
+    if (_directAi.ttsKey.isNotEmpty) {
+      _ttsKeyHint = _directAi.ttsKey.length > 4
+          ? '…${_directAi.ttsKey.substring(_directAi.ttsKey.length - 4)}'
+          : _directAi.ttsKey;
+    }
+
     try {
       final res = await _api.get('/api/admin/ai-settings').timeout(const Duration(seconds: 2));
       if (res.statusCode == 200) {
@@ -101,6 +138,17 @@ class _SettingsTabState extends State<SettingsTab> {
             _baseUrlController.text = data['baseUrl']?.toString() ?? 'https://helpcoder.cc';
           }
           _keyHint = data['keyHint']?.toString() ?? _keyHint;
+
+          if (data['ttsModel'] != null && data['ttsModel'].toString().isNotEmpty) {
+            _ttsModel = data['ttsModel'].toString();
+            _ttsModelController.text = _ttsModel;
+          }
+          if (data['ttsVoice'] != null && data['ttsVoice'].toString().isNotEmpty) {
+            _ttsVoice = data['ttsVoice'].toString();
+          }
+          if (data['ttsKeyHint'] != null) {
+            _ttsKeyHint = data['ttsKeyHint'].toString();
+          }
         });
       }
     } catch (_) {}
@@ -190,6 +238,86 @@ class _SettingsTabState extends State<SettingsTab> {
     }
   }
 
+  Future<void> _testTtsSound() async {
+    setState(() {
+      _isTestingTts = true;
+      _ttsTestResult = null;
+    });
+
+    final model = _ttsModelController.text.trim().isNotEmpty
+        ? _ttsModelController.text.trim()
+        : 'deepgram/flux-tts:free';
+    final key = _ttsKeyController.text.trim().isNotEmpty
+        ? _ttsKeyController.text.trim()
+        : (_provider == 'openrouter' ? _apiKeyController.text.trim() : '');
+
+    // 1. تجربة النطق المباشر من الهاتف (Direct TTS on phone)
+    final directRes = await _directAi.testTts(
+      model: model,
+      voice: _ttsVoice,
+      apiKey: key.isNotEmpty ? key : null,
+    );
+
+    if (directRes['ok'] == true) {
+      if (mounted) {
+        setState(() {
+          _ttsTestResult = directRes;
+          _isTestingTts = false;
+        });
+      }
+      return;
+    }
+
+    // 2. إذا تعذر مباشرة، نجرب من خلال السيرفر إن كان متاحاً
+    try {
+      final res = await _api.post('/api/admin/ai-settings/test-tts', body: {
+        'model': model,
+        'voice': _ttsVoice,
+        'key': key,
+        'provider': _provider,
+      }).timeout(const Duration(seconds: 15));
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+        if (data['ok'] == true && data['audioBase64'] != null) {
+          final audioBytes = base64Decode(data['audioBase64']);
+          await _directAi.player.play(BytesSource(audioBytes));
+          if (mounted) {
+            setState(() {
+              _ttsTestResult = {
+                'ok': true,
+                'model': model,
+                'voice': _ttsVoice,
+                'message': 'تم تشغيل الصوت بنجاح عبر الخادم 🔊 ($model)',
+              };
+              _isTestingTts = false;
+            });
+          }
+          return;
+        } else if (mounted) {
+          setState(() {
+            _ttsTestResult = {
+              'ok': false,
+              'error': data['error'] ?? directRes['error'] ?? 'تعذر تشغيل الصوت',
+            };
+            _isTestingTts = false;
+          });
+          return;
+        }
+      }
+    } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _ttsTestResult = {
+          'ok': false,
+          'error': directRes['error'] ?? 'تعذر اختبار الصوت. تحقق من مفتاح OpenRouter.',
+        };
+        _isTestingTts = false;
+      });
+    }
+  }
+
   Future<void> _saveAiSettings() async {
     setState(() => _isSaving = true);
     final apiKey = _apiKeyController.text.trim();
@@ -198,6 +326,10 @@ class _SettingsTabState extends State<SettingsTab> {
         : _providersInfo[_provider]?['defaultModel'] ?? 'gpt-5';
     final baseUrl = _baseUrlController.text.trim();
     final voiceKey = _voiceKeyController.text.trim();
+    final ttsModel = _ttsModelController.text.trim().isNotEmpty
+        ? _ttsModelController.text.trim()
+        : 'deepgram/flux-tts:free';
+    final ttsKey = _ttsKeyController.text.trim();
 
     // 1. حفظ الإعدادات محلياً على الهاتف دائماً
     await _directAi.saveSettings(
@@ -206,6 +338,9 @@ class _SettingsTabState extends State<SettingsTab> {
       model: model,
       baseUrl: baseUrl.isNotEmpty ? baseUrl : 'https://helpcoder.cc',
       voiceKey: voiceKey,
+      ttsModel: ttsModel,
+      ttsVoice: _ttsVoice,
+      ttsKey: ttsKey,
     );
 
     // 2. محاولة حفظ الإعدادات على السيرفر إن كان متصلاً
@@ -213,10 +348,13 @@ class _SettingsTabState extends State<SettingsTab> {
       final payload = <String, dynamic>{
         'provider': _provider,
         'model': model,
+        'tts_model': ttsModel,
+        'tts_voice': _ttsVoice,
       };
       if (apiKey.isNotEmpty) payload['api_key'] = apiKey;
       if (_provider == 'custom') payload['base_url'] = baseUrl;
       if (voiceKey.isNotEmpty) payload['voice_key'] = voiceKey;
+      if (ttsKey.isNotEmpty) payload['tts_key'] = ttsKey;
 
       await _api.put('/api/admin/ai-settings', body: payload).timeout(const Duration(seconds: 2));
     } catch (_) {}
@@ -228,7 +366,7 @@ class _SettingsTabState extends State<SettingsTab> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'تم حفظ وتفعيل إعدادات الذكاء بنجاح على هاتفك 💾✅',
+            'تم حفظ وتفعيل إعدادات الذكاء والصوت بنجاح 💾🔊✅',
             style: GoogleFonts.tajawal(fontWeight: FontWeight.bold),
           ),
           backgroundColor: AppColors.brand,
@@ -641,6 +779,263 @@ class _SettingsTabState extends State<SettingsTab> {
                     Expanded(
                       child: SketchButton.primary(
                         text: _isSaving ? 'جاري الحفظ…' : '💾 حفظ الإعدادات',
+                        onPressed: _isSaving ? () {} : _saveAiSettings,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          // 2.5 كارت إعدادات الصوت والنطق (TTS Settings - OpenRouter / deepgram/flux-tts:free)
+          SketchCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Text('🔊', style: TextStyle(fontSize: 20)),
+                        const SizedBox(width: 8),
+                        Text(
+                          'إعدادات الصوت والنطق (TTS)',
+                          style: GoogleFonts.lemonada(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.ink,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.brandWash,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: AppColors.brand, width: 1.2),
+                      ),
+                      child: Text(
+                        'OpenRouter 🆓',
+                        style: GoogleFonts.tajawal(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.brandDeep,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'تحويل النص لصوت ونطق ردود المساعد عبر موديل deepgram/flux-tts:free المجاني من مزود OpenRouter.',
+                  style: GoogleFonts.tajawal(fontSize: 12, color: AppColors.inkMuted),
+                ),
+                const SizedBox(height: 16),
+
+                // اسم الموديل مع زر تعيين الافتراضي
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('موديل الصوت (TTS Model):', style: GoogleFonts.tajawal(fontWeight: FontWeight.bold, fontSize: 13)),
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          _ttsModelController.text = 'deepgram/flux-tts:free';
+                          _ttsVoice = 'aura-asteria';
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.brandWash,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: AppColors.brand, width: 1),
+                        ),
+                        child: Text(
+                          'الموديل الافتراضي المجاني ✨',
+                          style: GoogleFonts.tajawal(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppColors.brandDeep),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _ttsModelController,
+                  decoration: InputDecoration(
+                    hintText: 'deepgram/flux-tts:free',
+                    filled: true,
+                    fillColor: AppColors.surfaceCard,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.ink, width: 1.5),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.ink, width: 1.5),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                // اختيار نبرة الصوت (Deepgram Aura Voices)
+                Text('نبرة الصوت (Aura Voice):', style: GoogleFonts.tajawal(fontWeight: FontWeight.bold, fontSize: 13)),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceCard,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.ink, width: 1.5),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _deepgramVoices.any((v) => v['id'] == _ttsVoice) ? _ttsVoice : 'aura-asteria',
+                      isExpanded: true,
+                      icon: const Icon(Icons.arrow_drop_down, color: AppColors.ink),
+                      items: _deepgramVoices.map((v) {
+                        return DropdownMenuItem(
+                          value: v['id'],
+                          child: Text(
+                            v['label']!,
+                            style: GoogleFonts.tajawal(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.ink,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) setState(() => _ttsVoice = val);
+                      },
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                // مفتاح OpenRouter للصوت
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('مفتاح OpenRouter للصوت:', style: GoogleFonts.tajawal(fontWeight: FontWeight.bold, fontSize: 13)),
+                    if (_ttsKeyHint != null)
+                      Text(
+                        'المفتاح: $_ttsKeyHint',
+                        style: GoogleFonts.tajawal(fontSize: 11, color: AppColors.brandDeep, fontWeight: FontWeight.bold),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _provider == 'openrouter'
+                      ? '💡 يتم استخدام مفتاح OpenRouter الرئيسي تلقائياً، أو يمكنك إدخال مفتاح مخصص هنا.'
+                      : 'أدخل مفتاح OpenRouter (sk-or-...) لتفعيل نطق الصوت بموديل deepgram/flux-tts:free.',
+                  style: GoogleFonts.tajawal(fontSize: 11, color: AppColors.inkMuted),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _ttsKeyController,
+                  obscureText: _obscureTtsKey,
+                  decoration: InputDecoration(
+                    hintText: _ttsKeyHint != null ? 'الحفاظ على المفتاح المحفوظ ($_ttsKeyHint)' : 'sk-or-v1-...',
+                    hintStyle: GoogleFonts.tajawal(fontSize: 12, color: AppColors.inkFaint),
+                    filled: true,
+                    fillColor: AppColors.surfaceCard,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.ink, width: 1.5),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.ink, width: 1.5),
+                    ),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscureTtsKey ? Icons.visibility_off : Icons.visibility,
+                        color: AppColors.inkMuted,
+                        size: 20,
+                      ),
+                      onPressed: () => setState(() => _obscureTtsKey = !_obscureTtsKey),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // نتائج اختبار الصوت إن وجدت
+                if (_ttsTestResult != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _ttsTestResult!['ok'] == true
+                          ? AppColors.brandWash
+                          : AppColors.healthWash,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: _ttsTestResult!['ok'] == true ? AppColors.brand : AppColors.danger,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          _ttsTestResult!['ok'] == true ? '🔊' : '❌',
+                          style: const TextStyle(fontSize: 18),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _ttsTestResult!['ok'] == true
+                                    ? 'تم نطق الصوت بنجاح عبر مكبر الصوت 🎵'
+                                    : 'فشل اختبار الصوت:',
+                                style: GoogleFonts.tajawal(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12.5,
+                                  color: _ttsTestResult!['ok'] == true
+                                      ? AppColors.brandDeep
+                                      : AppColors.dangerDeep,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _ttsTestResult!['ok'] == true
+                                    ? '${_ttsTestResult!['message'] ?? 'الموديل جاهز للاستخدام في دوّنلي!'}'
+                                    : '${_ttsTestResult!['error'] ?? 'خطأ غير معروف'}',
+                                style: GoogleFonts.tajawal(fontSize: 11.5, color: AppColors.ink),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+
+                // أزرار تجربة النطق وحفظ إعدادات الصوت
+                Row(
+                  children: [
+                    Expanded(
+                      child: SketchButton.secondary(
+                        text: _isTestingTts ? 'جاري التشغيل… 🔊' : '🔊 تجربة الصوت والنطق',
+                        onPressed: _isTestingTts ? () {} : _testTtsSound,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: SketchButton.primary(
+                        text: _isSaving ? 'جاري الحفظ…' : '💾 حفظ إعدادات الصوت',
                         onPressed: _isSaving ? () {} : _saveAiSettings,
                       ),
                     ),

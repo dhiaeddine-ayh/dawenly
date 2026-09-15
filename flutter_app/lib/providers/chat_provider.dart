@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../core/api_client.dart';
 import '../models/chat_message.dart';
 import '../services/local_storage_service.dart';
 
 class ChatProvider extends ChangeNotifier {
+  final ApiClient _api = ApiClient();
   final LocalStorageService _storage = LocalStorageService();
   final List<ChatMessageModel> _messages = [];
   bool _isSending = false;
@@ -12,6 +15,33 @@ class ChatProvider extends ChangeNotifier {
   bool get isSending => _isSending;
 
   Future<void> loadHistory() async {
+    try {
+      final res = await _api.get('/api/ask/history');
+      if (res.statusCode == 200) {
+        final list = jsonDecode(res.body) as List;
+        if (list.isNotEmpty) {
+          _messages.clear();
+          for (final item in list) {
+            final role = item['role']?.toString();
+            final content = item['content']?.toString() ?? '';
+            if (content.isNotEmpty) {
+              _messages.add(ChatMessageModel(
+                id: (item['id']?.toString()) ?? DateTime.now().millisecondsSinceEpoch.toString(),
+                text: content,
+                isUser: role == 'user',
+                timestamp: DateTime.tryParse(item['created_at']?.toString() ?? '') ?? DateTime.now(),
+              ));
+            }
+          }
+          if (_messages.isNotEmpty) {
+            notifyListeners();
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+
+    // استرجاع التاريخ المحلي عند انقطاع الاتصال
     try {
       final data = await _storage.loadData();
       final list = (data['chat'] ?? []) as List;
@@ -31,14 +61,14 @@ class ChatProvider extends ChangeNotifier {
 
       if (_messages.isEmpty) {
         _messages.add(ChatMessageModel.fromAi(
-          'أهلاً بك في دوّنلي! أنا مساعدك الشخصي الذكي، جاهز دائماً لمساعدتك في تنظيم يومك، تتبع عاداتك، وتقديم أفضل النصائح 🌟',
+          'أهلاً بك في دوّنلي! أنا مساعدك الشخصي الذكي، جاهز دائماً لمساعدتك في تنظيم يومك، تتبع عاداتك، والإجابة عن أي تساؤل من واقع دفترك 🌟',
         ));
       }
       notifyListeners();
     } catch (_) {}
   }
 
-  Future<void> sendMessage(String text) async {
+  Future<void> sendMessage(String text, {String scope = 'all', bool fast = false}) async {
     final query = text.trim();
     if (query.isEmpty) return;
 
@@ -47,14 +77,55 @@ class ChatProvider extends ChangeNotifier {
     _isSending = true;
     notifyListeners();
 
-    // محاكاة معالجة طبيعية للمساعد الذكي المحلي
-    await Future.delayed(const Duration(milliseconds: 600));
+    try {
+      final payload = _messages
+          .where((m) => m.text.isNotEmpty)
+          .map((m) => {
+                'role': m.isUser ? 'user' : 'assistant',
+                'content': m.text,
+              })
+          .toList();
 
-    final reply = _generateLocalAiReply(query);
-    _messages.add(ChatMessageModel.fromAi(reply));
+      final res = await _api.post('/api/ask', body: {
+        'messages': payload,
+        'scope': scope,
+        'fast': fast,
+      });
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final reply = data['reply']?.toString() ?? '';
+        if (reply.isNotEmpty) {
+          _messages.add(ChatMessageModel.fromAi(reply));
+          _isSending = false;
+          notifyListeners();
+          await _persistChatHistory();
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('Chat API error: $e');
+    }
+
+    // بديل ذكي محلي في حالة تعذر الوصول للسيرفر
+    await Future.delayed(const Duration(milliseconds: 500));
+    final fallback = _generateLocalAiReply(query);
+    _messages.add(ChatMessageModel.fromAi(fallback));
     _isSending = false;
     notifyListeners();
 
+    await _persistChatHistory();
+  }
+
+  Future<void> clearHistory() async {
+    try {
+      await _api.delete('/api/ask/history');
+    } catch (_) {}
+    _messages.clear();
+    _messages.add(ChatMessageModel.fromAi(
+      'تم مسح المحادثة السابقة بنجاح. كيف يمكنني مساعدتك الآن؟ ✨',
+    ));
+    notifyListeners();
     await _persistChatHistory();
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../core/constants.dart';
 import '../core/design_system/daftar_topbar.dart';
@@ -56,17 +57,85 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openReportModal() {
+    final titleController = TextEditingController();
+    final descController = TextEditingController();
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('بلّغ عن مشكلة 🐞'),
-        content: const Text(
-          'إذا واجهتك أي مشكلة أثناء استخدام التطبيق، يمكنك إرسال تقرير ليتم إصلاحها فوراً.',
+        backgroundColor: AppColors.surfaceCard,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppColors.ink, width: 2),
+        ),
+        title: Text(
+          'بلّغ عن مشكلة 🐞',
+          style: GoogleFonts.lemonada(
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            color: AppColors.ink,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'إذا واجهتك أي مشكلة أو كان لديك اقتراح، اكتبه وسنتابعه فوراً.',
+              style: GoogleFonts.tajawal(fontSize: 12.5, color: AppColors.inkMuted),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: titleController,
+              decoration: InputDecoration(
+                labelText: 'عنوان المشكلة أو الملاحظة',
+                labelStyle: GoogleFonts.tajawal(fontSize: 12),
+                hintText: 'مثال: خطأ في إضافة هدف',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: descController,
+              maxLines: 3,
+              decoration: InputDecoration(
+                labelText: 'التفاصيل',
+                labelStyle: GoogleFonts.tajawal(fontSize: 12),
+                hintText: 'اشرح ما حدث بالتفصيل...',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('إغلاق'),
+            child: Text('إلغاء', style: GoogleFonts.tajawal(color: AppColors.inkMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.brand,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () async {
+              final title = titleController.text.trim();
+              final desc = descController.text.trim();
+              if (title.isNotEmpty) {
+                final fullMsg = desc.isNotEmpty ? '$title\n\n$desc' : title;
+                await context.read<DataProvider>().reportIssue(fullMsg, page: '/flutter-home');
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('تم إرسال تقريرك بنجاح، شكراً لك! 🙏'),
+                      backgroundColor: AppColors.brand,
+                    ),
+                  );
+                }
+              }
+            },
+            child: Text('إرسال', style: GoogleFonts.tajawal(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -141,6 +210,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final data = context.watch<DataProvider>();
+    final unread = data.unreadNotificationsCount;
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -150,7 +222,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
           onRefresh: _handleRefresh,
           onNotificationsPressed: () => NotifModal.show(context),
-          unreadNotificationsCount: 0,
+          unreadNotificationsCount: unread,
         ),
         drawer: DwSidebar(
           currentTab: _currentTab,
@@ -167,7 +239,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Navigator.pop(context);
             NotifModal.show(context);
           },
-          unreadNotificationsCount: 0,
+          unreadNotificationsCount: unread,
         ),
         body: Stack(
           children: [

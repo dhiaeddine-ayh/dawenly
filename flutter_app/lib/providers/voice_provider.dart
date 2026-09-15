@@ -1,13 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import '../core/api_client.dart';
 import '../services/local_storage_service.dart';
 
 class VoiceProvider extends ChangeNotifier {
   final AudioRecorder _audioRecorder = AudioRecorder();
   final LocalStorageService _storage = LocalStorageService();
+  final ApiClient _api = ApiClient();
 
   bool _isRecording = false;
   bool _isProcessing = false;
@@ -75,10 +78,32 @@ class VoiceProvider extends ChangeNotifier {
       final path = await _audioRecorder.stop();
       final audioPath = path ?? _recordedPath;
 
-      await Future.delayed(const Duration(milliseconds: 500));
+      if (audioPath != null && await File(audioPath).exists()) {
+        try {
+          final res = await _api.uploadVoice(audioPath);
+          if (res.statusCode == 200) {
+            final data = jsonDecode(res.body) as Map<String, dynamic>;
+            final reply = data['reply']?.toString() ??
+                data['transcript']?.toString() ??
+                'تم تسجيل وتوثيق ملاحظتك بنجاح 🎙️✅';
+            _lastResultText = reply;
+            _isProcessing = false;
+            notifyListeners();
+            return {
+              'ok': true,
+              'reply': reply,
+              'transcript': data['transcript'],
+              'receipts': data['receipts'],
+            };
+          }
+        } catch (apiErr) {
+          debugPrint('Voice API upload error: $apiErr');
+        }
+      }
+
       _isProcessing = false;
 
-      // حفظ التسجيل الصوتي محلياً في دفتر اليوميات
+      // حفظ التسجيل الصوتي محلياً في دفتر اليوميات عند انقطاع الاتصال
       try {
         final data = await _storage.loadData();
         final entriesList = (data['entries'] ?? []) as List;

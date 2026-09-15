@@ -73,7 +73,9 @@ class OverviewTab extends StatelessWidget {
                     streak: streak,
                   ),
                   SketchChip.cost(
-                    cost: '—',
+                    cost: data.totalExpenses > 0
+                        ? '${data.totalExpenses.toStringAsFixed(0)} ج.م'
+                        : '٠ ج.م',
                   ),
                 ],
               ),
@@ -85,12 +87,20 @@ class OverviewTab extends StatelessWidget {
           // 2. كارت الكومبوزر السكتش المرسوم باليد (احكِ لي ماذا فعلت اليوم...)
           ComposerCard(
             onSubmit: (text) async {
-              await data.addEntry(text);
+              final result = await data.runAgentLog(text);
               if (context.mounted) {
+                final reply = result?['reply']?.toString() ??
+                    (result != null && result['receipts'] != null && (result['receipts'] as List).isNotEmpty
+                        ? 'تم تسجيل بنودك بنجاح ✅'
+                        : 'تم تدوين يومك بنجاح ✍️');
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('تم تدوين يومك بنجاح ✍️'),
+                  SnackBar(
+                    content: Text(
+                      reply,
+                      style: GoogleFonts.tajawal(fontWeight: FontWeight.bold),
+                    ),
                     backgroundColor: AppColors.brand,
+                    behavior: SnackBarBehavior.floating,
                   ),
                 );
               }

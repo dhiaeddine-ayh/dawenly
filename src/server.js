@@ -872,7 +872,8 @@ export function startServer() {
       const scope = String(req.query.scope || "all");
       const date = String(req.query.date || "");
       if (scope === "day" && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: "اختار تاريخ صحيح الأول" });
-      const ext = String(req.headers["content-type"] || "").includes("ogg") ? "ogg" : "webm";
+      const ct = String(req.headers["content-type"] || "");
+      const ext = ct.includes("ogg") ? "ogg" : ct.includes("m4a") ? "m4a" : ct.includes("wav") ? "wav" : ct.includes("mp4") ? "mp4" : "webm";
       try {
         const transcript = await transcribe(buf, `ask.${ext}`, user.id);
         if (!transcript) return res.status(422).json({ error: "مقدرتش أفهم الصوت، جرّب تاني" });
@@ -1022,7 +1023,8 @@ export function startServer() {
       if (!user) return;
       const buf = req.body;
       if (!buf || !buf.length) return res.status(400).json({ error: "مفيش صوت" });
-      const ext = (req.headers["content-type"] || "").includes("ogg") ? "ogg" : "webm";
+      const ct = String(req.headers["content-type"] || "");
+      const ext = ct.includes("ogg") ? "ogg" : ct.includes("m4a") ? "m4a" : ct.includes("wav") ? "wav" : ct.includes("mp4") ? "mp4" : "webm";
       const audioPath = persistAudio(user.id, "voice", ext, buf); // احفظ فورًا قبل أي معالجة
       try {
         const transcript = await transcribe(buf, `voice.${ext}`, user.id);
@@ -1071,7 +1073,8 @@ export function startServer() {
       if (!user) return;
       const buf = req.body;
       if (!buf || !buf.length) return res.status(400).json({ error: "مفيش صوت" });
-      const ext = (req.headers["content-type"] || "").includes("ogg") ? "ogg" : "webm";
+      const ct = String(req.headers["content-type"] || "");
+      const ext = ct.includes("ogg") ? "ogg" : ct.includes("m4a") ? "m4a" : ct.includes("wav") ? "wav" : ct.includes("mp4") ? "mp4" : "webm";
       const audioPath = persistAudio(user.id, "thought", ext, buf); // احفظ فورًا قبل أي معالجة
       try {
         const transcript = await transcribe(buf, `thought.${ext}`, user.id);

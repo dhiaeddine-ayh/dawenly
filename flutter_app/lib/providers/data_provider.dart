@@ -5,6 +5,7 @@ import '../models/finance_item.dart';
 import '../models/health_item.dart';
 import '../models/goal_item.dart';
 import '../models/entry_item.dart';
+import '../models/asset_item.dart';
 import '../services/local_storage_service.dart';
 
 class DataProvider extends ChangeNotifier {
@@ -17,7 +18,11 @@ class DataProvider extends ChangeNotifier {
   List<HealthItemModel> _healthItems = [];
   List<GoalItemModel> _goals = [];
   List<EntryItemModel> _entries = [];
+  List<AssetItemModel> _assets = [];
   Map<String, dynamic> _overview = {};
+
+  double _goldG24Price = 3720.0;
+  double _usdRate = 48.60;
 
   bool get isLoading => _isLoading;
   List<HabitModel> get habits => _habits;
@@ -26,7 +31,31 @@ class DataProvider extends ChangeNotifier {
   List<HealthItemModel> get healthItems => _healthItems;
   List<GoalItemModel> get goals => _goals;
   List<EntryItemModel> get entries => _entries;
+  List<AssetItemModel> get assets => _assets;
   Map<String, dynamic> get overview => _overview;
+  double get goldG24Price => _goldG24Price;
+  double get usdRate => _usdRate;
+
+  double get totalGoldValue => _assets
+      .where((a) => a.type == 'gold')
+      .fold(0.0, (sum, a) => sum + a.calculateValueEgp(goldG24: _goldG24Price));
+
+  double get totalCashValue => _assets
+      .where((a) => a.type == 'cash')
+      .fold(0.0, (sum, a) => sum + a.calculateValueEgp(goldG24: _goldG24Price));
+
+  double get totalOtherValue => _assets
+      .where((a) => a.type == 'other')
+      .fold(0.0, (sum, a) => sum + a.calculateValueEgp(goldG24: _goldG24Price));
+
+  double get totalLiabilities => _assets
+      .where((a) => a.type == 'liability')
+      .fold(0.0, (sum, a) => sum + a.calculateValueEgp(goldG24: _goldG24Price));
+
+  double get totalNetWorth =>
+      (totalGoldValue + totalCashValue + totalOtherValue) - totalLiabilities;
+
+  double get liquidNetWorth => (totalGoldValue + totalCashValue) - totalLiabilities;
 
   double get totalExpenses {
     return _finances
@@ -72,6 +101,10 @@ class DataProvider extends ChangeNotifier {
       // Entries
       final entriesList = (data['entries'] ?? []) as List;
       _entries = entriesList.map((e) => EntryItemModel.fromJson(Map<String, dynamic>.from(e))).toList();
+
+      // Assets
+      final assetsList = (data['assets'] ?? []) as List;
+      _assets = assetsList.map((e) => AssetItemModel.fromJson(Map<String, dynamic>.from(e))).toList();
 
       // Overview
       _overview = Map<String, dynamic>.from(data['checkin'] ?? {});
@@ -124,6 +157,7 @@ class DataProvider extends ChangeNotifier {
           'type': e.type,
           'created_at': e.createdAt,
         }).toList(),
+        'assets': _assets.map((a) => a.toJson()).toList(),
         'checkin': _overview,
       };
 
@@ -200,7 +234,12 @@ class DataProvider extends ChangeNotifier {
   }
 
   // Finance Operations
-  Future<bool> addFinance(double amount, String category, {String? note, String type = 'expense'}) async {
+  Future<bool> addFinance({
+    required double amount,
+    required String category,
+    String? note,
+    String type = 'expense',
+  }) async {
     final newId = DateTime.now().millisecondsSinceEpoch % 1000000;
     _finances.insert(
       0,
@@ -267,5 +306,63 @@ class DataProvider extends ChangeNotifier {
     notifyListeners();
     await _persistAll();
     return true;
+  }
+
+  Future<void> deleteTask(int taskId) async {
+    _tasks.removeWhere((t) => t.id == taskId);
+    notifyListeners();
+    await _persistAll();
+  }
+
+  Future<void> deleteEntry(int entryId) async {
+    _entries.removeWhere((e) => e.id == entryId);
+    notifyListeners();
+    await _persistAll();
+  }
+
+  // Assets Operations
+  Future<bool> addAsset({
+    required String name,
+    required String type,
+    double quantity = 0.0,
+    int? karat,
+    String currency = 'EGP',
+    double? manualValue,
+    double? goal,
+  }) async {
+    final newId = DateTime.now().millisecondsSinceEpoch % 1000000;
+    _assets.insert(
+      0,
+      AssetItemModel(
+        id: newId,
+        name: name,
+        type: type,
+        quantity: quantity,
+        karat: karat ?? 21,
+        currency: currency,
+        manualValue: manualValue,
+        goal: goal,
+      ),
+    );
+    notifyListeners();
+    await _persistAll();
+    return true;
+  }
+
+  Future<void> deleteAsset(int assetId) async {
+    _assets.removeWhere((a) => a.id == assetId);
+    notifyListeners();
+    await _persistAll();
+  }
+
+  Future<void> refreshMarketRates() async {
+    _isLoading = true;
+    notifyListeners();
+    await Future.delayed(const Duration(milliseconds: 600));
+    // Simulate slight live market movement
+    _goldG24Price = 3720.0 + (DateTime.now().second % 15);
+    _usdRate = 48.60 + ((DateTime.now().millisecond % 10) / 100.0);
+    _isLoading = false;
+    notifyListeners();
   }
 }

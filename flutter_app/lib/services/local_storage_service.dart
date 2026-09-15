@@ -222,6 +222,45 @@ class LocalStorageService {
           'created_at': '${todayIso}T08:00:00.000Z',
         }
       ],
+      'assets': [
+        {
+          'id': 1,
+          'name': 'سبيكة دهب عيار ٢٤',
+          'type': 'gold',
+          'quantity': 20.0,
+          'karat': 24,
+          'currency': 'EGP',
+        },
+        {
+          'id': 2,
+          'name': 'جنيهات دهب عيار ٢١',
+          'type': 'gold',
+          'quantity': 16.0,
+          'karat': 21,
+          'currency': 'EGP',
+        },
+        {
+          'id': 3,
+          'name': 'حساب طوارئ بالدولار',
+          'type': 'cash',
+          'quantity': 1500.0,
+          'currency': 'USD',
+        },
+        {
+          'id': 4,
+          'name': 'حساب بنكي جاري',
+          'type': 'cash',
+          'quantity': 45000.0,
+          'currency': 'EGP',
+        },
+        {
+          'id': 5,
+          'name': 'متبقي قسط شراء سيارة',
+          'type': 'liability',
+          'quantity': 28000.0,
+          'currency': 'EGP',
+        },
+      ],
       'checkin': {
         'last_date': todayIso,
         'streak': 12,

@@ -18,6 +18,7 @@ import 'tabs/goals_tab.dart';
 import 'tabs/finances_tab.dart';
 import 'tabs/tasks_tab.dart';
 import 'tabs/dafter_tab.dart';
+import 'tabs/assets_tab.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -108,16 +109,7 @@ class _HomeScreenState extends State<HomeScreen> {
       case DwTab.dafter:
         return const DafterTab();
       case DwTab.assets:
-        return const Center(
-          child: Padding(
-            padding: EdgeInsets.all(24.0),
-            child: Text(
-              '💎 الأصول (الذهب والعملات)\nجاري تهيئتها في الخطوة المخصصة.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, color: AppColors.inkMuted),
-            ),
-          ),
-        );
+        return const AssetsTab();
       case DwTab.ask:
         return const ChatScreen();
       case DwTab.files:
